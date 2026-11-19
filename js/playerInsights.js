@@ -266,6 +266,8 @@ const loadInto = (rel) => live(rel).then((v) => { done.set(rel, v || null); retu
 export const tourCodeOf = (tour) => tourCode(tour);
 export function ensureResults(code, years) { return Promise.all([...new Set(years)].map((y) => loadInto(`results/${code}-${y}.json`))); }
 export const ensureFields = () => loadInto("fields.json");
+/** (update 915) an event's scorecards (every player's strokes on every hole of every round), saved by the live feed */
+export const loadCards = (tid) => (tid ? loadInto(`results/cards/${tid}.json`).catch(() => null) : Promise.resolve(null));
 export const ensureBios = () => loadInto("bios.json");
 /** official { pos, total, name } for a player at an event in a year, or null (not loaded, not in the file, not found) */
 export function officialSync(eventName, year, playerName, code) {
@@ -281,7 +283,7 @@ export function officialSync(eventName, year, playerName, code) {
 export function officialBoard(eventName, year, code) {
   const R = got(`results/${code}-${year}.json`); if (!R?.events) return null;
   const evs = Object.values(R.events), nm = matchEventName(eventName, evs.map((e) => e.name)); if (!nm) return null;
-  const e = evs.find((x) => x.name === nm); return e?.rows?.length ? { name: e.name, final: e.final !== false, rows: e.rows } : null;
+  const e = evs.find((x) => x.name === nm), tid = Object.keys(R.events).find((k) => R.events[k] === e); return e?.rows?.length ? { tid, name: e.name, final: e.final !== false, rows: e.rows } : null;
 }
 /** (update 844) how many events a saved results file holds (null: no file saved for that tour and year) */
 export function resultsInfo(code, year) { const R = got(`results/${code}-${year}.json`); return R?.events ? Object.keys(R.events).length : null; }

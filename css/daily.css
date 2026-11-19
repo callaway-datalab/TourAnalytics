@@ -1354,3 +1354,10 @@ html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; colo
 .sc .sc-t td small { display: inline !important; margin-left: 4px; } .sc .sc-predon { background: rgba(100,210,255,0.06); } .sc .sc-next3 { margin: 0 0 12px; } .sc .sc-next3 small { display: block; color: var(--muted, #8e8e93); margin-top: 4px; font-size: 0.82rem; } /* (update 905) */
 .sc .sc-thin { color: #ff9f0a; font-weight: 700; cursor: help; } /* (update 909) */
 .sc .sc-bridge { margin: 10px 0 14px; } /* (update 911) */
+/* (update 915) Tournament Results: how it played out (story, round leaders, race chart) and round-by-round leaderboard */
+.tr-story { display: grid; gap: 10px; }
+.tr-facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; } .tr-f { display: flex; gap: 10px; align-items: flex-start; line-height: 1.45; }
+.tr-fi { flex: none; width: 1.6em; text-align: center; }
+.tr-rl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; } .tr-rl-c { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid rgba(128,128,128,0.25); border-radius: 10px; } .tr-rl-c b { font-size: 1rem; }
+.tr-race-svg { width: 100%; height: auto; display: block; } .tr-grid { stroke: rgba(128,128,128,0.22); } .tr-ax { fill: var(--muted, #8e8e93); font-size: 11px; } .tr-lbl { font-size: 12px; font-weight: 700; }
+.tr-lb-t td.tr-rd { color: var(--muted, #c7c7cc); font-variant-numeric: tabular-nums; }

@@ -96,30 +96,69 @@ export function resultsView(S, rounds, field) {
   const heroBox = el("section", { class: "panel tr-heroes" }, el("p", { class: "muted small" }, "Loading the week…"));
   const scBox = el("section", { class: "panel tr-sc" }, el("p", { class: "muted small" }, "Loading the scorecard…"));
   const lbBox = el("section", { class: "panel tr-lb" }, el("p", { class: "muted small" }, "Loading the leaderboard…"));
+  const storyBox = el("section", { class: "panel tr-story", hidden: true }); // (update 915) how the tournament played out
 
   // (update 836) the leaderboard: the PGA Tour's official one (position, to par), each player's strokes gained per round
   // that week beside it where the stats file has them; without an official one (DP World Tour, or not saved yet), the
   // stats file's field ranked by strokes gained per round
+  // (update 915) how it played out: the plain-words story and a race chart (the top five's strokes behind the lead, every hole)
+  function drawStory(S, B) {
+    const ICON = { lead: "\u{1F3C6}", comeback: "\u{1F4C8}", turn: "\u21AA", slip: "\u26A0", margin: "\u{1F3C1}", changes: "\u21C4", big: "\u2B06", charge: "\u{1F680}", low: "\u2B50" };
+    const rl = el("div", { class: "tr-rl" }, S.roundLeaders.map((x) => el("div", { class: "tr-rl-c" }, [el("span", { class: "muted small" }, `After round ${x.r}`), el("b", {}, x.leaders.length > 2 ? `${x.leaders.length} tied` : x.leaders.map((n) => String(n).split(/\s+/).slice(-1)[0]).join(", ")),
+      el("small", { class: "muted" }, `${x.score === 0 ? "E" : x.score > 0 ? `+${x.score}` : `\u2212${-x.score}`}${x.margin ? ` · by ${x.margin}` : x.leaders.length > 1 ? " · tied" : ""}${x.winnerBack ? ` · ${String(S.winnerName).split(/\s+/).slice(-1)[0]} ${x.winnerBack} back` : ""}`)])));
+    storyBox.hidden = false;
+    mount(storyBox, [el("p", { class: "fx-eyebrow" }, `How it played out · ${B.name || ev.event} ${ev.year}`), el("ul", { class: "tr-facts" }, S.facts.map((f) => el("li", { class: `tr-f tr-f-${f.k}` }, [el("span", { class: "tr-fi", "aria-hidden": "true" }, ICON[f.k] || "\u2022"), el("span", {}, f.t)]))),
+      rl, raceChart(S), el("p", { class: "muted small" }, "From every player's hole-by-hole scorecard. Holes are compared in number order (with two tees in the early rounds, \"after No. 9\" is the same hole for everyone, not the same moment).")]);
+  }
+  function raceChart(S) {
+    const { n, lines, rounds } = S.series, W = window.innerWidth < 640 ? 420 : 720, H = window.innerWidth < 640 ? 260 : 240, L = 34, Rm = 110, T = 12, Bm = 22, NS = "http://www.w3.org/2000/svg";
+    const sv = (t, a = {}, kids = []) => { const e = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); for (const c of [].concat(kids)) if (c != null) e.append(c); return e; };
+    const mx = Math.max(4, ...lines.flatMap((l) => l.pts.filter((v) => v != null))), cap = Math.min(mx, 12);
+    const X = (c) => L + (c / Math.max(1, n - 1)) * (W - L - Rm), Y = (v) => T + (Math.min(v, cap) / cap) * (H - T - Bm);
+    const COL = ["#ffcc00", "#64d2ff", "#30d158", "#bf5af2", "#ff9f0a"], g = [];
+    for (let v = 0; v <= cap; v += cap > 8 ? 4 : 2) g.push(sv("line", { x1: L, x2: W - Rm, y1: Y(v), y2: Y(v), class: "tr-grid" }), sv("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", class: "tr-ax" }, v === 0 ? "Lead" : `+${v}`));
+    rounds.forEach((r, i) => { const x0 = X(i * 18); if (i) g.push(sv("line", { x1: x0, x2: x0, y1: T, y2: H - Bm, class: "tr-grid" })); g.push(sv("text", { x: X(i * 18 + 9), y: H - 6, "text-anchor": "middle", class: "tr-ax" }, `Round ${r}`)); });
+    const labs = [];
+    lines.forEach((l, i) => { let d = "", pen = false; l.pts.forEach((v, c) => { if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${X(c).toFixed(1)} ${Y(v).toFixed(1)} `; pen = true; });
+      const lastI = l.pts.findLastIndex((v) => v != null), col = COL[i % COL.length];
+      g.push(sv("path", { d, fill: "none", stroke: col, "stroke-width": l.win ? 2.8 : 1.6, opacity: l.win ? 1 : 0.85 }));
+      if (lastI >= 0) labs.push({ x: X(lastI) + 6, y: Y(l.pts[lastI]) + 4, col, t: String(l.name).split(/\s+/).slice(-1)[0] }); });
+    // the names at the line ends, nudged apart so they never overlap
+    labs.sort((a, b) => a.y - b.y); for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 13) labs[i].y = labs[i - 1].y + 13;
+    for (const lb of labs) g.push(sv("text", { x: lb.x, y: lb.y, class: "tr-lbl", fill: lb.col }, lb.t));
+    return el("div", { class: "tr-race" }, [el("p", { class: "muted small" }, "Strokes behind the lead after every hole (top of the chart = leading), the top five finishers"), sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "tr-race-svg", role: "img", "aria-label": "Strokes behind the lead" }, g)]);
+  }
   (async () => {
     const sgOf = new Map(); // nameKey → { label, sg, n }
-    for (const p of field || []) { const rs = (p.rounds || []).filter((r) => r.event === ev.event && yrOf(r) === ev.year); if (!rs.length) continue;
-      const t = rs.reduce((a, r) => a + (r.shots || []).reduce((b, s) => b + (s.sg || 0), 0), 0); sgOf.set(nameKey(p.label || ""), { key: p.key, label: p.label || "", sg: t / rs.length, n: rs.length }); }
+    // (update 844) the field's own names for the event can carry the year ("Baycurrent Classic 2026"), and its players their name as .name
+    const evN = (e) => String(e || "").replace(/\s+\d{4}$/, "").trim().toLowerCase(), want = evN(ev.event);
+    for (const p of field || []) { const rs = (p.rounds || []).filter((r) => evN(r.event) === want && yrOf(r) === ev.year && !r.eventLevel); if (!rs.length) continue;
+      const nm = p.label || p.name || (me && p.key === me.key ? me.label : "") || ""; if (!nm) continue;
+      const t = rs.reduce((a, r) => a + (r.shots || []).reduce((b, s) => b + (s.sg || 0), 0), 0); sgOf.set(nameKey(nm), { key: p.key, label: nm, sg: t / rs.length, n: rs.length }); }
     const sgRank = new Map([...sgOf.values()].sort((a, b) => b.sg - a.sg).map((o, i) => [o, i + 1]));
     const isMe = (nm, key) => !!me && ((key && key === me.key) || nameKey(nm) === nameKey(me.label));
-    let B = null;
-    try { const PI = await import("./playerInsights.js"), code = PI.tourCodeOf(evRs[0]?.tour); if (code) { await PI.ensureResults(code, [ev.year]); B = PI.officialBoard(ev.event, ev.year, code); } } catch (e) { console.warn("leaderboard", e); }
+    let B = null, why = "";
+    try { const PI = await import("./playerInsights.js"), code = PI.tourCodeOf(evRs[0]?.tour);
+      if (!code) why = "The DP World Tour has no official leaderboard in the live feed";
+      else { await PI.ensureResults(code, [ev.year]); B = PI.officialBoard(ev.event, ev.year, code); const nEv = PI.resultsInfo(code, ev.year);
+        why = nEv == null ? `The live feed hasn't saved any official ${code === "H" ? "Korn Ferry Tour" : "PGA TOUR"} results for ${ev.year} yet (the live-feed function from update 824 or later has to be deployed and have run)`
+          : `The live feed's ${ev.year} results (${nEv} event${nEv === 1 ? "" : "s"} so far) don't include this one yet`; } } catch (e) { console.warn("leaderboard", e); why = "The official results couldn't be read just now"; }
     const par = (t) => (t == null || !Number.isFinite(Number(t)) ? "—" : Number(t) === 0 ? "E" : Number(t) > 0 ? `+${Number(t)}` : String(Number(t)).replace("-", "\u2212"));
     const pos = (p) => { const u = String(p || "").toUpperCase(); return /^(CUT|MC)$/.test(u) ? "MC" : u || "—"; };
     const sgCell = (o) => (o ? el("td", { class: `num ${o.sg >= 0 ? "pos" : "neg"}` }, [fmtSG(o.sg), el("span", { class: "tr-lb-rk" }, ` (${sgRank.get(o)})`)]) : el("td", { class: "num muted" }, "—"));
     let rows, head, note;
+    // (update 915) the scorecards: each round's score on the leaderboard, and how the tournament played out
+    let S = null; if (B?.tid) { try { const [PI, TS] = await Promise.all([import("./playerInsights.js"), import("./tourneyStory.js")]); const C = await PI.loadCards(B.tid); if (C) { S = TS.tourneyStory(C, B.rows); if (!S && C.note) console.warn("Scorecards couldn't be read; their layout:", C.note); } } catch (e) { console.warn("scorecards", e); } }
+    if (S) drawStory(S, B);
     if (B) {
-      head = ["Pos", "Player", "To par", "SG per round (rank)"];
-      rows = B.rows.map((r) => { const o = sgOf.get(nameKey(r.name)); return { me: isMe(r.name, o?.key), tds: [el("td", {}, pos(r.pos)), el("td", {}, r.name), el("td", { class: "num" }, par(r.total)), sgCell(o)] }; });
-      note = `Official PGA Tour leaderboard${B.final ? "" : " (not final)"}. Strokes gained per round from the stats file, ranked among the ${sgOf.size} players it has that week.`;
+      const nR = S ? Math.max(...S.series.rounds, 0) : 0, rCols = Array.from({ length: nR }, (_, i) => i + 1);
+      head = ["Pos", "Player", ...rCols.map((r) => `R${r}`), "To par"];
+      rows = B.rows.map((r) => { const o = sgOf.get(nameKey(r.name)), rr = S && r.pid ? S.roundsOf(r.pid) : null; return { me: isMe(r.name, o?.key), tds: [el("td", {}, pos(r.pos)), el("td", {}, r.name), ...rCols.map((k) => el("td", { class: "num tr-rd" }, rr?.[k] != null ? String(rr[k]) : "—")), el("td", { class: "num strong" }, par(r.total))] }; });
+      note = `Official PGA Tour leaderboard${B.final ? "" : " (not final)"}.${S ? " Each round's score from the official scorecards." : " Round-by-round scores appear once the live feed has saved this event's scorecards."}`;
     } else if (sgOf.size) {
       head = ["SG rank", "Player", "SG per round", "Rounds"];
       rows = [...sgOf.values()].sort((a, b) => b.sg - a.sg).map((o, i) => ({ me: isMe(o.label, o.key), tds: [el("td", {}, String(i + 1)), el("td", {}, o.label), el("td", { class: `num ${o.sg >= 0 ? "pos" : "neg"}` }, fmtSG(o.sg)), el("td", { class: "num" }, String(o.n))] }));
-      note = "The official leaderboard isn't in for this event (the DP World Tour, or one the live feed hasn't saved), so this is the stats file's field ranked by strokes gained per round.";
+      note = `${why || "The official leaderboard isn't in for this event"}, so this is the stats file's field ranked by strokes gained per round.`; // (update 844: which it is)
     } else { mount(lbBox, [el("p", { class: "fx-eyebrow" }, "Leaderboard"), el("p", { class: "muted small" }, "No leaderboard for this event yet.")]); return; }
     let all = false; const TOP = 10;
     const draw = () => {
@@ -245,5 +284,5 @@ export function resultsView(S, rounds, field) {
     mount(scBox, [el("div", { class: "tr-sc-h" }, [el("p", { class: "fx-eyebrow" }, "Scorecard"), tabs]), cardBox, holeBox]);
     drawCard(); drawHole();
   })().catch((e) => { console.warn("results", e); mount(scBox, el("p", { class: "muted small" }, `This tournament couldn’t be drawn (${e?.message || e}).`)); }); // (update 760: never a blank page)
-  return [picker, heroBox, lbBox, scBox];
+  return [picker, heroBox, storyBox, lbBox, scBox];
 }
