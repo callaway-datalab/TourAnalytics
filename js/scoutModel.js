@@ -82,7 +82,7 @@ export function scoutModel(B) {
       const model = line == null ? null : 1 - Phi((line - proj) / fit.s), cohort = wSum ? comps.reduce((s, c) => s + (c.x.next.rank <= t ? c.w : 0), 0) / wSum : null;
       const p = model == null ? cohort : cohort == null ? model : wC * cohort + (1 - wC) * model; return [t, { p, model, cohort }]; }));
     const grades = { now: gradeOf(cur.sg, "sg"), ceil: gradeOf(proj + 0.84 * fit.s, "sg"), proj: gradeOf(proj, "sg"),
-      tools: Object.fromEntries(CATS.map((c) => [c, gradeOf(cur[c], c)])), projRank: rankLike(proj), ceilRank: rankLike(proj + 0.84 * fit.s), refY, refN: refOf.sg.length };
+      tools: Object.fromEntries(CATS.map((c) => [c, gradeOf(cur[c], c)])), projRank: rankLike(proj), ceilRank: rankLike(proj + 0.84 * fit.s), bestRank: rankLike(proj + 1.2816 * fit.s), worstRank: rankLike(proj - 1.2816 * fit.s), /* (update 903: the range, as ranks) */ refY, refN: refOf.sg.length };
     // before the breakout: past seasons most like this one that came the year before a top-10 season (not already top 10)
     const pre = pool.filter((x) => x.k !== k && x.next.rank <= 10 && x.rank > 10).map((x) => ({ x, d: dist(cur, x) })).sort((a, b) => a.d - b.d).slice(0, 3).map((c) => ({ ...c, sim: simOf(c.d) }));
     const out = { cur, mine, comps, effN, proj, lo: proj - 1.2816 * fit.s, hi: proj + 1.2816 * fit.s, odds, grades, pre, wC };

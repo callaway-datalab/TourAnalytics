@@ -1335,3 +1335,19 @@ html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; colo
 .sc .sc-svg { margin: 0 auto; } .sc .sc-yrl { font-size: 12px; }
 .sc .sc-lg .sc-lg-std::before { background: #4da3ff; } .sc .sc-lg .sc-lg-roll2::before { background: rgba(160,160,170,0.7); }
 .sc .sc-ver { opacity: 0.55; font-weight: 400; letter-spacing: 0; text-transform: none; }
+/* (update 903) Scouting in plain words: how to read it, the verdict, tiles, flags, a simpler board */
+.sc .sc-how { margin: 4px 0 12px; padding: 10px 14px; border-radius: 12px; background: rgba(191,90,242,0.08); border: 1px solid rgba(191,90,242,0.25); font-size: 0.9rem; }
+.sc .sc-how ul { margin: 4px 0 0; padding-left: 18px; } .sc .sc-how li { margin: 2px 0; }
+.sc .sc-verdict { font-size: 1.12rem; line-height: 1.45; margin: 4px 0 12px; }
+.sc .sc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.sc .sc-tile { display: grid; gap: 2px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.25); background: rgba(255,255,255,0.03); }
+.sc .sc-tile .sc-tl { font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted, #8e8e93); } .sc .sc-tile b { font-size: 1.45rem; } .sc .sc-tile small { display: block; color: var(--muted, #8e8e93); font-size: 0.8rem; }
+.sc .sc-tile.dir-up b, .sc .dir-up { color: #30d158; } .sc .sc-tile.dir-down b, .sc .dir-down { color: #ff453a; } .sc .dir-steady { color: var(--muted, #a1a1a6); }
+.sc .sc-flags ul { list-style: none; margin: 4px 0 10px; padding: 0; display: grid; gap: 6px; }
+.sc .sc-flag { display: flex; gap: 10px; align-items: flex-start; } .sc .sc-flag small { display: block; color: var(--muted, #8e8e93); font-size: 0.82rem; }
+.sc .sc-fi { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 0.8rem; margin-top: 1px; }
+.sc .f-g .sc-fi { background: rgba(48,209,88,0.18); color: #30d158; } .sc .f-r .sc-fi { background: rgba(255,69,58,0.18); color: #ff453a; } .sc .f-a .sc-fi { background: rgba(255,159,10,0.18); color: #ff9f0a; }
+.sc .sc-likes { font-size: 0.92rem; margin: 6px 0; }
+.sc .sc-more-det { margin: 0 0 12px; } .sc .sc-more-det > summary { cursor: pointer; padding: 10px 14px; border-radius: 12px; border: 1px dashed rgba(128,128,128,0.35); color: var(--muted, #a1a1a6); font-weight: 600; } .sc .sc-more-det[open] > summary { margin-bottom: 8px; }
+.sc .sc-chart-help { font-size: 0.86rem; color: var(--muted, #a1a1a6); margin: 4px 0 0; }
+.sc .sc-path { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted, #c7c7cc); } .sc td.sc-dir { white-space: nowrap; font-weight: 600; } .sc .sc-pc-top .sc-dir { font-weight: 700; font-size: 0.85rem; }

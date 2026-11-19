@@ -30,7 +30,7 @@ export async function scoutTab(box, key0, name0) {
   const tours = [...new Set(field.flatMap((p) => p.rounds.map((r) => r.tour)).filter(Boolean))].sort((a, b) => field.reduce((t, p) => t + p.rounds.filter((r) => r.tour === b).length, 0) - field.reduce((t, p) => t + p.rounds.filter((r) => r.tour === a).length, 0));
   const fp0 = field.find((p) => p.key === key0);
   let tour = (fp0 && [...new Set(fp0.rounds.map((r) => r.tour))].sort((a, b) => fp0.rounds.filter((r) => r.tour === b).length - fp0.rounds.filter((r) => r.tour === a).length)[0]) || tours[0] || null;
-  let sel = key0, sortK = "roll", sortDir = 1, q = "", minSeasons = 1, part = "board";
+  let sel = key0, sortK = "rank", sortDir = 1, q = "", minSeasons = 1, part = "board";
   const memo = new Map(), mMemo = new Map(), modelOf = (T) => mMemo.get(T) || mMemo.set(T, scoutModel(build(T))).get(T);
 
   // everything for one tour: each player's rounds (dated, with running sums), each season's ranks, the rolling ranks
@@ -83,57 +83,54 @@ export async function scoutTab(box, key0, name0) {
     const minSel = el("select", { class: "ip-sel", "aria-label": "Seasons ranked" }, [1, 2, 3].map((n) => el("option", { value: String(n), ...(n === minSeasons ? { selected: true } : {}) }, n === 1 ? "Any players" : `${n}+ seasons ranked`)));
     minSel.addEventListener("change", () => { minSeasons = Number(minSel.value); drawBoard(); });
     const detail = el("div", { class: "sc-detail" }), boardBox = el("div", {});
-    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim(), el("span", { class: "sc-ver", title: "The version of this page" }, " · v901")]), el("h2", { class: "ip-h" }, "Scouting"),
-      el("p", { class: "muted" }, `Who's rising, how good they could get, and who they look like. Ratings 0-100 (better than that % of the tour), odds of a top-${M.tiers[0] || 10} season, comps from every past season in the file, fast risers, and each career's trajectory (year-end strokes-gained rank, the rolling rank over the last ${ROLL} rounds${B.hasOw ? ", the OWGR" : ""}). Tap a player for their report.`)])),
+    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim(), el("span", { class: "sc-ver", title: "The version of this page" }, " · v903")]), el("h2", { class: "ip-h" }, "Scouting"),
+      el("p", { class: "muted" }, "How good is a player, is he getting better, and where is he likely to finish next season? Pick a player below for a plain-English report.")])),
+      // (update 903) how to read it, in three lines
+      el("div", { class: "sc-how" }, [el("strong", {}, "How to read this page"), el("ul", {}, [
+        el("li", {}, [el("b", {}, "Rank"), ` = where he stands on the ${tour || "tour"} by strokes gained per round (1st is the best).`]),
+        el("li", {}, [el("b", {}, "Rising / Slipping"), ` = his last ${ROLL} rounds compared with a year ago.`]),
+        el("li", {}, [el("b", {}, "Next season"), " = our best guess of his year-end rank, from how similar players' careers went."])])]),
       el("div", { class: "sc-ctl" }, [pills, search, minSel]), partPills(), detail, boardBox]);
-    function partPills() { return el("div", { class: "ip-pills sc-parts" }, [["board", "Every player"], ["risers", "Fast risers"], ["how", "How it works"]].map(([v, l]) => { const b = el("button", { type: "button", class: `ip-pill${v === part ? " on" : ""}`, "aria-pressed": String(v === part) }, l); b.addEventListener("click", () => { part = v; draw(); }); return b; })); }
+    function partPills() { return el("div", { class: "ip-pills sc-parts" }, [["board", "Every player"], ["risers", "Biggest improvers"], ["how", "The math"]].map(([v, l]) => { const b = el("button", { type: "button", class: `ip-pill${v === part ? " on" : ""}`, "aria-pressed": String(v === part) }, l); b.addEventListener("click", () => { part = v; draw(); }); return b; })); }
 
+    // (update 903) the board, simply: path of year-end ranks, rank now, direction, next season's best guess, top-10 chance
     function drawBoard() {
       const qq = q.trim().toLowerCase(), list = B.rows.filter((r) => r.nSeasons >= minSeasons && (!qq || r.nm.toLowerCase().includes(qq)));
-      const S = (r) => M.scout(r.k);
-      const val = (r) => (sortK === "now" ? -(S(r)?.grades.now ?? 0) : sortK === "ceil" ? -(S(r)?.grades.ceil ?? 0) : sortK === "t1" ? -(S(r)?.odds[T1]?.p ?? -1) : sortK === "t2" ? -(S(r)?.odds[T2]?.p ?? -1) : sortK === "roll" ? r.now?.r ?? 1e9 : sortK === "trend" ? -(r.trend ?? -1e9) : sortK === "streak" ? -(r.streak) : sortK === "age" ? r.age ?? 1e9 : sortK === "ow" ? r.ow ?? 1e9 : sortK === "nm" ? r.nm : sortK.startsWith("y") ? r.rk[Number(sortK.slice(1))] ?? 1e9 : 0);
+      const S = (r) => M.scout(r.k), rankNow = (r) => S(r)?.cur.rank ?? r.last ?? null;
+      const dirOf = (r) => { const ch = r.now && r.ago ? r.ago.r - r.now.r : null; if (ch == null) return { k: "none", t: "—", ch }; const big = Math.max(5, Math.round(0.15 * r.ago.r)); return ch >= big ? { k: "up", t: "▲ Rising", ch } : -ch >= big ? { k: "down", t: "▼ Slipping", ch } : { k: "steady", t: "● Steady", ch }; };
+      if (!["rank", "dir", "next", "t1", "age", "nm"].includes(sortK)) { sortK = "rank"; sortDir = 1; }
+      const val = (r) => (sortK === "rank" ? rankNow(r) ?? 1e9 : sortK === "dir" ? -(dirOf(r).ch ?? -1e9) : sortK === "next" ? S(r)?.grades.projRank ?? 1e9 : sortK === "t1" ? -(S(r)?.odds[10]?.p ?? -1) : sortK === "age" ? r.age ?? 1e9 : r.nm);
       list.sort((a, b) => { const x = val(a), y = val(b); return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir; });
-      const th = (k, label, cls0 = "num", title = null) => { const b = el("th", { class: `${cls0} sc-sort${sortK === k ? " on" : ""}`, title, tabindex: "0" }, [label, sortK === k ? (sortDir > 0 ? " ▲" : " ▼") : ""]);
-        const go = () => { if (sortK === k) sortDir = -sortDir; else { sortK = k; sortDir = 1; } drawBoard(); }; b.addEventListener("click", go); b.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return b; };
-      const chg = (a, b) => (a == null || b == null ? null : a - b); // (positive: up the ranks)
-      const yrCell = (r, i) => { const o = r.ranks[i]; if (!o) return el("td", { class: "num muted" }, "—"); const prev = r.rk.slice(0, i).findLast((v) => v != null), d = chg(prev, o.rank);
-        return el("td", { class: "num sc-yr", title: `${years[i]}: ${ord(o.rank)} of ${B.season[years[i]].of} (${sg2(o.sg)} per round, ${o.n} rounds)${d != null ? `; ${d > 0 ? `up ${d}` : d < 0 ? `down ${-d}` : "no change"} from the season before` : ""}` },
-          [`${o.rank}`, d ? el("small", { class: d > 0 ? "pos" : "neg" }, ` ${d > 0 ? "▲" : "▼"}${Math.abs(d)}`) : null]); };
-      const rows = list.slice(0, 300).map((r) => { const tr = el("tr", { class: `sc-row${r.k === sel ? " on" : ""}`, tabindex: "0" }, [
-          el("td", { class: "sc-nm" }, r.nm), el("td", { class: "num" }, r.age ?? "—"), ...years.map((_, i) => yrCell(r, i)),
-          el("td", { class: "num strong" }, r.now ? `${r.now.r}` : "—"), el("td", { class: `num ${r.trend > 0 ? "pos" : r.trend < 0 ? "neg" : ""}` }, r.trend == null ? "—" : r.trend === 0 ? "0" : `${r.trend > 0 ? "▲" : "▼"}${Math.abs(r.trend)}`),
-          el("td", { class: `num ${r.streak > 0 ? "pos" : r.streak < 0 ? "neg" : ""}` }, r.streak > 0 ? `${r.streak} up` : r.streak < 0 ? `${-r.streak} down` : "—"),
-          B.hasOw ? el("td", { class: "num" }, r.ow != null ? String(Math.round(r.ow)) : "—") : null,
-          ...(() => { const sc = S(r); if (!sc) return [el("td", { class: "num muted" }, "—"), el("td", { class: "num muted" }, "—"), T1 ? el("td", { class: "num muted" }, "—") : null, T2 ? el("td", { class: "num muted" }, "—") : null];
-            return [el("td", { class: "num" }, gEl(sc.grades.now)), el("td", { class: "num" }, gEl(sc.grades.ceil)), T1 ? el("td", { class: "num" }, pc(sc.odds[T1]?.p)) : null, T2 ? el("td", { class: "num" }, pc(sc.odds[T2]?.p)) : null]; })()]);
-        const pick = () => { sel = r.k; drawBoard(); drawDetail(); detail.scrollIntoView({ behavior: "smooth", block: "start" }); };
-        tr.addEventListener("click", pick); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(); }); return tr; });
-      if (PH()) { // (update 900) a card for each player, a sort menu, 40 at a time
-        const SORTS = [["roll", `Last ${ROLL} rank`], ["now", "Rating now"], ["ceil", "Ceiling"], ...(T1 ? [["t1", `Top ${T1} odds`]] : []), ["trend", "1-yr change"], ["streak", "Streak"], ...years.map((y, i) => [`y${i}`, `${y}${y === lastY ? " so far" : ""} rank`]), ["age", "Age"], ["nm", "Name"]];
+      const path = (r) => years.map((y, i) => (r.ranks[i] ? `${r.ranks[i].rank}${y === lastY ? "*" : ""}` : null)).filter(Boolean).join(" → ") || "—";
+      const pick = (r) => { sel = r.k; drawBoard(); drawDetail(); detail.scrollIntoView({ behavior: "smooth", block: "start" }); };
+      const SORTS = [["rank", "Rank now"], ["dir", "Rising fastest"], ["next", "Next season (best guess)"], ["t1", "Top-10 chance"], ["age", "Youngest"], ["nm", "Name"]];
+      const note = samp(`Path: year-end rank each season (* this season so far). Direction: last ${ROLL} rounds against a year ago. Next season: best-guess year-end rank. Tap a player for the full report.`);
+      if (PH()) {
         const sortSel = el("select", { class: "ip-sel sc-sortsel", "aria-label": "Sort by" }, SORTS.map(([k, l]) => el("option", { value: k, ...(k === sortK ? { selected: true } : {}) }, `Sort: ${l}`)));
         sortSel.addEventListener("change", () => { sortK = sortSel.value; sortDir = 1; shown = 40; drawBoard(); });
-        const cardOf = (r) => { const sc = S(r), have = years.map((y, i) => [y, r.ranks[i]]).filter(([, o]) => o);
-          const yrs = have.map(([y, o], i) => { const prev = have[i - 1]?.[1], d = prev ? prev.rank - o.rank : null; return el("span", { class: "sc-cy" }, [`${y}${y === lastY ? "*" : ""} `, el("b", {}, ord(o.rank)), d ? el("small", { class: d > 0 ? "pos" : "neg" }, ` ${d > 0 ? "▲" : "▼"}${Math.abs(d)}`) : null]); });
+        const cardOf = (r) => { const sc = S(r), d = dirOf(r), rn = rankNow(r);
           const b = el("button", { type: "button", class: `sc-pc${r.k === sel ? " on" : ""}` }, [
-            el("div", { class: "sc-pc-top" }, [el("strong", {}, r.nm), r.age != null ? el("span", { class: "muted small" }, ` ${r.age}`) : null, sc ? el("span", { class: "sc-pc-g" }, [el("small", { class: "muted" }, "Now "), gEl(sc.grades.now), el("small", { class: "muted" }, " Ceil "), gEl(sc.grades.ceil)]) : null]),
-            have.length ? el("div", { class: "sc-pc-yrs" }, yrs) : null,
-            el("div", { class: "sc-pc-chips" }, [r.now ? el("span", {}, [`Last ${ROLL} `, el("b", {}, ord(r.now.r)), r.trend ? el("small", { class: r.trend > 0 ? "pos" : "neg" }, ` ${r.trend > 0 ? "▲" : "▼"}${Math.abs(r.trend)}`) : null]) : null,
-              sc && T1 ? el("span", {}, [`Top ${T1} `, el("b", {}, pc(sc.odds[T1]?.p))]) : null, r.streak ? el("span", { class: r.streak > 0 ? "pos" : "neg" }, `${Math.abs(r.streak)} ${r.streak > 0 ? "up" : "down"} in a row`) : null, B.hasOw && r.ow != null ? el("span", {}, ["OWGR ", el("b", {}, String(Math.round(r.ow)))]) : null])]);
-          b.addEventListener("click", () => { sel = r.k; drawBoard(); drawDetail(); detail.scrollIntoView({ behavior: "smooth", block: "start" }); }); return b; };
+            el("div", { class: "sc-pc-top" }, [el("strong", {}, r.nm), r.age != null ? el("span", { class: "muted small" }, ` ${r.age}`) : null, el("span", { class: `sc-dir dir-${d.k}` }, d.t)]),
+            el("div", { class: "sc-pc-yrs" }, [el("span", {}, ["Rank now ", el("b", {}, rn ? ord(rn) : "—")]), sc ? el("span", {}, ["Next season ", el("b", {}, `≈${ord(sc.grades.projRank)}`)]) : null, sc?.odds[10] ? el("span", {}, ["Top-10 ", el("b", {}, pc(sc.odds[10].p))]) : null]),
+            el("div", { class: "muted small" }, `Path: ${path(r)}`)]);
+          b.addEventListener("click", () => pick(r)); return b; };
         const more = list.length > shown ? el("button", { type: "button", class: "btn ghost sc-more" }, `Show more (${list.length - shown} left)`) : null;
         more?.addEventListener("click", () => { shown += 40; drawBoard(); });
-        mount(boardBox, card(`Every player · ${tour || ""}`.trim(), "#bf5af2", [sortSel, el("div", { class: "sc-pcs" }, list.slice(0, shown).map(cardOf)), more,
-          samp(`Year-end strokes-gained rank each season (* so far; ▲▼ against the season before). Last ${ROLL}: rank over each player's last ${ROLL} rounds (▲▼ against a year ago). Now / Ceil: ratings 0-100.`)]));
+        mount(boardBox, card(`Every player · ${tour || ""}`.trim(), "#bf5af2", [sortSel, el("div", { class: "sc-pcs" }, list.slice(0, shown).map(cardOf)), more, note]));
         return; }
+      const th = (k, label, cls0 = "num", title = null) => { if (!k) return el("th", { class: cls0, title }, label); const b = el("th", { class: `${cls0} sc-sort${sortK === k ? " on" : ""}`, title, tabindex: "0" }, [label, sortK === k ? (sortDir > 0 ? " ▲" : " ▼") : ""]);
+        const go = () => { if (sortK === k) sortDir = -sortDir; else { sortK = k; sortDir = 1; } drawBoard(); }; b.addEventListener("click", go); b.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return b; };
+      const rows = list.slice(0, 300).map((r) => { const sc = S(r), d = dirOf(r), rn = rankNow(r);
+        const tr = el("tr", { class: `sc-row${r.k === sel ? " on" : ""}`, tabindex: "0" }, [el("td", { class: "sc-nm" }, r.nm), el("td", { class: "num" }, r.age ?? "—"), el("td", { class: "sc-path" }, path(r)),
+          el("td", { class: "num strong" }, rn ? ord(rn) : "—"), el("td", { class: `sc-dir dir-${d.k}`, title: r.now && r.ago ? `Last ${ROLL} rounds: ${ord(r.ago.r)} a year ago → ${ord(r.now.r)} now` : "" }, d.ch ? `${d.t} (${d.ch > 0 ? "+" : "−"}${Math.abs(d.ch)})` : d.t),
+          el("td", { class: "num" }, sc ? `≈${ord(sc.grades.projRank)}` : "—"), el("td", { class: "num" }, sc?.odds[10] ? pc(sc.odds[10].p) : "—")]);
+        tr.addEventListener("click", () => pick(r)); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(r); }); return tr; });
       mount(boardBox, card(`Every player · ${tour || ""}`.trim(), "#bf5af2", [
-        el("div", { class: "ip-tw sc-tw" }, el("table", { class: "ip-t sc-t" }, [el("thead", {}, el("tr", {}, [th("nm", "Player", ""), th("age", "Age"), ...years.map((y, i) => th(`y${i}`, y === lastY ? `${y}*` : y, "num", `Year-end strokes-gained rank, ${y}${y === lastY ? " (so far)" : ""}`)),
-          th("roll", `Last ${ROLL}`, "num", `Rolling rank: strokes gained per round over their last ${ROLL} rounds, against everyone else's last ${ROLL}`), th("trend", "1-yr change", "num", `Rolling rank now against a year ago (▲ moved up the ranks)`), th("streak", "Streak", "num", "Seasons in a row their year-end rank improved (up) or slipped (down)"), B.hasOw ? th("ow", "OWGR") : null,
-          th("now", "Now", "num", "Rating now, 0-100: better than that % of the tour's ranked players"), th("ceil", "Ceiling", "num", "Ceiling rating: a good next season (the projection's 80th percentile)"), T1 ? th("t1", `Top ${T1} odds`, "num", `Chance of a top-${T1} season next year`) : null, T2 ? th("t2", `Top ${T2} odds`, "num", `Chance of a top-${T2} season next year`) : null])),
+        el("div", { class: "ip-tw sc-tw" }, el("table", { class: "ip-t sc-t" }, [el("thead", {}, el("tr", {}, [th("nm", "Player", ""), th("age", "Age"), th(null, "Path (year-end ranks)", "", "Each season's year-end rank, oldest first (* this season so far)"),
+          th("rank", "Rank now"), th("dir", "Direction", "", `Last ${ROLL} rounds against a year ago`), th("next", "Next season", "num", "Best-guess year-end rank next season"), th("t1", "Top-10 chance", "num", "Chance of a top-10 season next year")])),
           el("tbody", {}, rows)])),
-        list.length > 300 ? el("p", { class: "muted small" }, `Showing 300 of ${list.length}: find a player or sort to see others.`) : null,
-        samp(`Year-end rank: strokes gained per round over the season, among the ${tour || "tour"}'s players with ${DEF.MIN.seasonRounds}+ rounds that season (* this season so far); ▲▼ the change from their previous ranked season. Last ${ROLL}: the same over each player's last ${ROLL} rounds as of the latest round in the file, among players with ${ROLL}+ rounds and a round in the past year; 1-yr change: against the same rank a year earlier. Streak: seasons in a row the year-end rank moved the same way.${B.hasOw ? " OWGR: the latest in the stats file." : ""}`)]));
+        list.length > 300 ? el("p", { class: "muted small" }, `Showing 300 of ${list.length}: find a player or sort to see others.`) : null, note]));
     }
-
     function drawDetail() {
       const r = B.rows.find((x) => x.k === sel);
       if (!r) { mount(detail, card("A player's career", "#bf5af2", el("p", { class: "muted" }, sel ? `No ${tour || ""} rounds on record for ${name0 || "this player"}. Tap a player below.` : "Tap a player below to see their career."))); return; }
@@ -158,12 +155,55 @@ export async function scoutTab(box, key0, name0) {
         el("td", { class: "num strong" }, [`${ord(x.o.rank)}`, prev ? el("small", { class: prev.rank > x.o.rank ? "pos" : prev.rank < x.o.rank ? "neg" : "" }, ` ${prev.rank > x.o.rank ? "▲" : prev.rank < x.o.rank ? "▼" : ""}${prev.rank !== x.o.rank ? Math.abs(prev.rank - x.o.rank) : ""}`) : null]),
         ...PI.CATS.map((c) => el("td", { class: "num", title: `${PI.CATN[c]}: ${sg2(x.o.cat[c])} per round, ${ord(x.o.cr[c])}` }, [sg2(x.o.cat[c]), el("small", { class: "muted" }, ` ${ord(x.o.cr[c])}`)])),
         B.hasOw ? el("td", { class: "num" }, x.o.ow != null ? String(Math.round(x.o.ow)) : "—") : null]); });
-      mount(detail, [reportCard(r), card(`${r.nm} · career`, "#bf5af2", [el("ul", { class: "ip-bul" }, bullets.map((b) => el("li", {}, b))), chart,
+      const det = el("details", { class: "sc-more-det" }, [el("summary", {}, "Show the details: ratings, odds and similar players"), reportCard(r)]);
+      mount(detail, [verdictCard(r), det, card(`${r.nm} · career`, "#bf5af2", [el("p", { class: "sc-chart-help" }, "Higher on the chart is better. Blue line: his rank as each season went on. Gold dot: where he finished that season (or stands now). Grey dots: his last 24 rounds (recent form)."),el("ul", { class: "ip-bul" }, bullets.map((b) => el("li", {}, b))), chart,
         segs.length && PH() ? el("div", { class: "sc-pcs" }, yrPts.map((x, i) => { const prev = yrPts[i - 1]?.o, d = prev ? prev.rank - x.o.rank : null; // (update 900) phones: a card a season
           return el("div", { class: "sc-sea" }, [el("div", { class: "sc-pc-top" }, [el("strong", {}, `${x.y}${x.y === lastY ? " so far" : ""}`), el("span", {}, [el("b", {}, ord(x.o.rank)), d ? el("small", { class: d > 0 ? "pos" : "neg" }, ` ${d > 0 ? "▲" : "▼"}${Math.abs(d)}`) : null, el("span", { class: "muted small" }, ` · ${sg2(x.o.sg)} · ${x.o.n} rds`)])]),
             el("div", { class: "sc-sea-cats" }, PI.CATS.map((c) => el("span", {}, [el("small", { class: "muted" }, { OTT: "Tee", APP: "Approach", ARG: "Short game", PUTT: "Putting" }[c]), el("b", {}, sg2(x.o.cat[c])), el("small", { class: "muted" }, ord(x.o.cr[c]))])))]); }))
         : segs.length ? el("div", { class: "ip-tw" }, el("table", { class: "ip-t sc-seasons" }, [el("thead", {}, el("tr", {}, ["Season", "Rounds", "SG per round", "Rank", ...PI.CATS.map((c) => PI.CATN[c]), B.hasOw ? "OWGR" : null].filter(Boolean).map((h, i) => el("th", { class: i ? "num" : null }, h)))), el("tbody", {}, segs)])) : null,
         samp(`Strokes gained per round on the ${tour || "tour"}, with the rank among that season's players with ${DEF.MIN.seasonRounds}+ rounds in each part of the game: which parts moved ${last}'s rank. The chart (higher is better): each season's rank so far after each event, ending on its year-end rank; faint behind it, the rank over the last ${ROLL} rounds (form, across seasons)${B.hasOw ? "; the OWGR dashed" : ""}.`)])]);
+    }
+    // (update 903) the plain-English report: how good, which way, where next season, and the green and red flags (with why)
+    function verdictCard(r) {
+      const sc = M.scout(r.k), last = lastName(r.nm);
+      if (!sc) return card(`${r.nm}`, "#ffcc00", el("p", {}, `Not enough rounds yet for a report: a player needs ${DEF.MIN.seasonRounds}+ rounds in a season on the ${tour || "tour"} to be ranked.`));
+      const cur = sc.cur, G = sc.grades, of = cur.of, rk = cur.rank, so = cur.partial ? " this season so far" : ` in ${cur.y}`;
+      const level = rk <= 10 ? "an elite, top-10 player" : rk <= 25 ? "a top-25 player" : rk <= 50 ? "a top-50 player" : rk <= of / 2 ? "an above-average tour player" : "a below-average tour player";
+      const ch = r.now && r.ago ? r.ago.r - r.now.r : null, big = (a) => Math.max(5, Math.round(0.15 * a));
+      const dir = ch == null ? "steady" : ch >= big(r.ago.r) ? "up" : -ch >= big(r.ago.r) ? "down" : "steady";
+      const dirTxt = dir === "up" ? `on the rise (his last ${ROLL} rounds rank ${ord(r.now.r)}, up from ${ord(r.ago.r)} a year ago)` : dir === "down" ? `slipping (his last ${ROLL} rounds rank ${ord(r.now.r)}, down from ${ord(r.ago.r)} a year ago)` : r.now ? `holding steady (his last ${ROLL} rounds rank ${ord(r.now.r)})` : "not playing enough lately to judge his form";
+      const t10 = sc.odds[10]?.p, oneIn = (p) => (p >= 0.5 ? `better than even` : p > 0.01 ? `about 1 in ${Math.max(2, Math.round(1 / p))}` : "very unlikely");
+      // the flags
+      const crk = B.season[cur.y]?.by.get(r.k)?.cr || {}, q = (x) => (x ? x / of : 1), flags = [];
+      if (r.streak >= 2) flags.push(["g", `Improved ${r.streak} seasons in a row`, `Year-end rank: ${B.years.map((y, i) => r.ranks[i] ? ord(r.ranks[i].rank) : null).filter(Boolean).join(" → ")}.`]);
+      if (r.streak <= -2) flags.push(["r", `Got worse ${-r.streak} seasons in a row`, `Year-end rank: ${B.years.map((y, i) => r.ranks[i] ? ord(r.ranks[i].rank) : null).filter(Boolean).join(" → ")}.`]);
+      if (r.now && r.now.r < rk * 0.7 && rk - r.now.r >= 5) flags.push(["g", "Playing better lately than his season rank", `Last ${ROLL} rounds: ${ord(r.now.r)}, against ${ord(rk)}${so}.`]);
+      if (r.now && r.now.r > rk * 1.4 && r.now.r - rk >= 5) flags.push(["r", "Cooling off lately", `Last ${ROLL} rounds: ${ord(r.now.r)}, against ${ord(rk)}${so}.`]);
+      if (r.age != null && r.age <= 26 && rk <= 60) flags.push(["g", `Young (${r.age}) and already top 60`, "Players usually keep improving into their late 20s."]);
+      if (r.age != null && r.age >= 37) flags.push(["r", `Age ${r.age}`, "Most players' scoring declines in their late 30s."]);
+      if (q(crk.APP) <= 0.2 || q(crk.OTT) <= 0.2) flags.push(["g", `Strong ball-striker (${q(crk.APP) <= q(crk.OTT) ? `approach ${ord(crk.APP)}` : `off the tee ${ord(crk.OTT)}`} on tour)`, "Driving and approach play hold up best from one season to the next."]);
+      if (q(crk.PUTT) <= 0.25 && q(crk.APP) > 0.5 && q(crk.OTT) > 0.5) flags.push(["r", `Relies on putting (putting ${ord(crk.PUTT)}, approach ${ord(crk.APP)})`, "Putting swings the most from one season to the next, so this level is the hardest to keep."]);
+      if (q(crk.APP) >= 0.8) flags.push(["r", `Weak approach play (${ord(crk.APP)} on tour)`, "Approach is the biggest part of scoring on tour."]);
+      { const NM = { OTT: "driving", APP: "approach play", ARG: "the short game", PUTT: "putting" }, parts = PI.CATS.filter((c) => crk[c]).sort((a, b) => crk[a] - crk[b]);
+        if (parts.length) { const b0 = parts[0], w0 = parts.at(-1);
+          if (q(crk[b0]) <= 0.35 && !flags.some((f) => f[1].includes(ord(crk[b0])))) flags.push(["g", `Best at ${NM[b0]} (${ord(crk[b0])} on tour)`, `Strokes gained ${sg2(cur[b0])} per round${so}.`]);
+          if (q(crk[w0]) >= 0.6 && !flags.some((f) => f[1].includes(ord(crk[w0])))) flags.push(["r", `Weakest at ${NM[w0]} (${ord(crk[w0])} on tour)`, `Strokes gained ${sg2(cur[w0])} per round${so}: the first place to look for improvement.`]); } }
+      const comp8 = sc.comps.slice(0, 8), up8 = comp8.filter((c) => c.x.next.rank < c.x.rank).length;
+      if (comp8.length >= 6 && up8 >= 6) flags.push(["g", `Similar players usually improved (${up8} of ${comp8.length})`, `The players whose seasons looked most like his mostly moved up the next season.`]);
+      if (comp8.length >= 6 && up8 <= 2) flags.push(["r", `Similar players usually got worse (${comp8.length - up8} of ${comp8.length})`, `The players whose seasons looked most like his mostly dropped the next season.`]);
+      if (cur.n < 30) flags.push(["a", `Only ${cur.n} rounds${so}`, "Small samples swing a lot: treat everything here with caution."]);
+      const tile = (label, big0, sub, cls0 = "") => el("div", { class: `sc-tile ${cls0}` }, [el("span", { class: "sc-tl" }, label), el("b", {}, big0), sub ? el("small", {}, sub) : null]);
+      const arrow = dir === "up" ? "▲ Rising" : dir === "down" ? "▼ Slipping" : "● Steady";
+      return card(`${r.nm} · scouting report`, "#ffcc00", [
+        el("p", { class: "sc-verdict" }, `${last} is ${level} on the ${tour || "tour"} (${ord(rk)} of ${of}${so}) and is ${dirTxt}.`),
+        el("div", { class: "sc-tiles" }, [
+          tile("Rank now", ord(rk), `of ${of}${so}`),
+          tile("Direction", arrow, r.now && r.ago ? `last ${ROLL}: ${ord(r.ago.r)} → ${ord(r.now.r)}` : "", `dir-${dir}`),
+          tile("Next season (best guess)", `≈${ord(G.projRank)}`, `likely ${ord(G.bestRank)}–${ord(G.worstRank)}`),
+          t10 != null ? tile("Chance of a top-10 season", `${Math.round(t10 * 100)}%`, oneIn(t10)) : null]),
+        flags.length ? el("div", { class: "sc-flags" }, [el("p", { class: "ip-kick" }, "What stands out"), el("ul", {}, flags.map(([k, t, why]) => el("li", { class: `sc-flag f-${k}` }, [el("span", { class: "sc-fi", "aria-hidden": "true" }, k === "g" ? "✓" : k === "r" ? "!" : "?"), el("span", {}, [el("b", {}, t), el("small", {}, why)])])))]) : null,
+        comp8.length ? el("p", { class: "sc-likes" }, [el("b", {}, "Players with seasons most like his: "), comp8.slice(0, 3).map((c) => `${c.x.nm} (${c.x.y}: ${ord(c.x.rank)}, then ${ord(c.x.next.rank)}${c.x.next.partial ? " so far" : ""})`).join(", "), `. Of the ${comp8.length} most similar, ${up8} improved the next season.`]) : null,
+        el("p", { class: "muted small" }, `"Likely" range: where he finishes about 8 seasons in 10. Ranks are by strokes gained per round among the ${tour || "tour"}'s players with ${DEF.MIN.seasonRounds}+ rounds.`)]);
     }
     // (update 890) the scouting report: grades, the projection and tier odds, comps, and the paths successful players took
     function reportCard(r) {
