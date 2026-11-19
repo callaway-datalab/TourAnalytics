@@ -1257,3 +1257,14 @@ th.bs-lastn .peak-len { top: 0 !important; margin: 0 !important; }
 .sc .sc-t td.sc-nm, .sc .sc-t th:first-child { position: sticky; left: 0; background: var(--card, #1c1c1e); z-index: 2; }
 .sc .sc-t th:first-child { z-index: 3; } .sc .sc-row.on td.sc-nm { background: #2a2233; }
 .sc > * { grid-column: 1 / -1; } .sc .sc-detail, .sc .sc-detail > * { max-width: 100%; }
+/* (update 890) Scouting report: grades (20-80), tier odds, comps */
+.sc .sc-grades { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin: 6px 0 8px; }
+.sc .sc-gbox { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border: 1px solid rgba(128,128,128,0.25); border-radius: 10px; text-align: center; }
+.sc .sc-gl { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted, #8e8e93); }
+.sc .sc-gbox .sc-g { font-size: 1.5rem; }
+.sc .sc-g { display: inline-block; min-width: 2em; padding: 0 4px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.sc .g-hi { color: #ffd60a; } .sc .g-good { color: #30d158; } .sc .g-avg { color: var(--text, #f2f2f7); } .sc .g-low { color: #ff9f0a; } .sc .g-poor { color: #ff453a; }
+.sc .sc-odds { margin: 8px 0 12px; } .sc .sc-odd { display: grid; grid-template-columns: 5em minmax(0, 1fr) 3.4em; gap: 8px; align-items: center; margin: 4px 0; }
+.sc .sc-ol { font-weight: 600; font-size: 0.85rem; } .sc .sc-odd b { text-align: right; font-variant-numeric: tabular-nums; }
+.sc .sc-ob { height: 10px; border-radius: 5px; background: rgba(128,128,128,0.18); overflow: hidden; } .sc .sc-ob i { display: block; height: 100%; background: #ffcc00; border-radius: 5px; }
+.sc .sc-parts { margin: 0 0 10px; }
