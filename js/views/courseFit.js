@@ -89,10 +89,13 @@ export async function fitTab(box, key, name) {
     if (r.sh && Math.abs(r.sh.mf.total) > Math.abs(big.edge)) { const m = r.sh.mf, k = [["tee", "misses off the tee"], ["app", "approach misses"], ["blow", "blow-ups"]].sort((a, b) => Math.abs(m[b[0]]) - Math.abs(m[a[0]]))[0];
       return `${self ? "your" : poss} ${k[1]} ${m[k[0]] >= 0 ? "suit" : "hurt"} ${self ? "you" : "them"} there (${sg2(m[k[0]])} a round)${m.holes[0]?.cost > 0.05 && m[k[0]] < 0 ? `, most on No. ${m.holes[0].h}` : ""}`; }
     return PI.fitWords(big, self ? "your" : `${last}’s`.replace(/s’s$/, "s’"), self ? "" : last); }; // (update 838: plain words)
+  // (update 886) what adds up to the fit: each part of the game's share (their number × how much more or less it matters there), and the misses
+  const parts = (r) => { const xs = r.parts.filter((x) => Math.abs(x.edge) >= 0.005).sort((a, b) => b.edge - a.edge).map((x) => `${PI.CATN[x.c].toLowerCase()} ${sg2(x.edge)} (${sg2(x.me)} × ${(x.room - 1 >= 0 ? "+" : "−") + Math.abs(x.room - 1).toFixed(2)})`);
+    if (r.sh && Math.abs(r.sh.mf.total) >= 0.005) xs.push(`misses ${sg2(r.sh.mf.total)}`); return xs.length ? ` · adds up from: ${xs.join(", ")}` : ""; };
   const best = rows.slice(0, 3), worst = rows.slice(-3).reverse();
   mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#64d2ff" }, `Course Fit · ${tour || ""} ${year}`.trim()), el("h2", { class: "ip-h" }, `Where ${poss} game fits best`)])),
-    el("div", { class: "ip-grid2" }, [card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round better suited than a normal week; ${lead(r)}`])))),
-      card("Toughest fits", "#ff453a", el("ul", { class: "ip-bul" }, worst.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round; ${lead(r)}`]))))]),
+    el("div", { class: "ip-grid2" }, [card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round better suited than a normal week; ${lead(r)}${parts(r)}`])))),
+      card("Toughest fits", "#ff453a", el("ul", { class: "ip-bul" }, worst.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round; ${lead(r)}${parts(r)}`]))))]),
     table,
     samp(`Impact vs usual: strokes gained only exists because players differ, so where the field spreads out more in a part of the game there's more for a good player to gain, and where everyone does about the same (easy greens, short putts) there's less. For each tournament and part: the spread of that week's field (every year in the stats file) against a normal ${tour || "tour"} week, pulled toward usual when there are few player-weeks. Fit vs a normal week: ${Poss} ${year} season in each part (${P.n} rounds) × (impact − 1), added up, strokes per round. It shows where there's more room, not why (the shot-by-shot data could, for courses in Strategy Maps). A guide to fit, not a forecast.`)]);
 }
