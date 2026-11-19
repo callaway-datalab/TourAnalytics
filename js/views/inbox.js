@@ -10,6 +10,8 @@ import { collection, addDoc, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot
 import { db, adminUids } from "../firebase-init.js";
 import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
+import { attachPicker, attachmentLinks } from "../attachments.js"; // (update 896) files with a message
+import { uploadChatFiles, getChatFileUrl } from "../store.js";
 
 const BUCKETS = [["issue", "Issues", "⚠"], ["question", "Questions", "?"], ["feature", "Feature requests", "✦"], ["team", "Team", "★"]];
 const TAG = { issue: "Issue", question: "Question", feature: "Feature request" };
@@ -60,7 +62,8 @@ export function render(main, { flash = () => {} } = {}) {
   const head = el("div", { class: "ib-head" }), msgs = el("ol", { class: "ib-msgs" });
   const box = el("textarea", { rows: 3, maxLength: 1900, class: "ib-box", placeholder: "Write a reply…", "aria-label": "Reply" });
   const sendB = el("button", { type: "button", class: "btn" }, "Send");
-  const form = el("div", { class: "ib-form", hidden: true }, [box, sendB]);
+  const pick = attachPicker();
+  const form = el("div", { class: "ib-formwrap", hidden: true }, [el("div", { class: "ib-form" }, [box, sendB]), pick.node]);
   const back = el("button", { type: "button", class: "link ib-back" }, "← All conversations");
   const thread = el("section", { class: "ib-thread" }, [back, head, msgs, form]);
   const shell = el("div", { class: "ib-shell" }, [el("aside", { class: "ib-side" }, [filters, list]), thread]);
@@ -138,20 +141,22 @@ export function render(main, { flash = () => {} } = {}) {
     if (!msgsNow.length) { mount(msgs, el("li", { class: "muted ib-empty" }, "No messages yet.")); return; }
     mount(msgs, msgsNow.map((m) => { const mine = m.uid === uid, staffM = isStaffId(m.uid), t = TAG[m.topic];
       return el("li", { class: `ib-m${mine ? " mine" : staffM ? " staff" : ""}` }, [el("div", { class: "ib-mh" }, [el("strong", {}, mine ? "You" : staffM ? nameOf(m.uid) : m.name || nameOf(m.uid)), staffM && r && isSupport(r) && !mine ? el("span", { class: "muted small" }, "(as Callaway Analyst)") : null, t ? el("span", { class: `ib-tag ib-${m.topic}` }, t) : null, el("span", { class: "muted small" }, formatWhen(m.createdAt))]),
-        el("p", {}, String(m.body || "").replace(/^\[(Issue|Question|Feature request)\]\s*/, ""))]); }));
+        m.fileOnly ? null : el("p", {}, String(m.body || "").replace(/^\[(Issue|Question|Feature request)\]\s*/, "")), m.attachments?.length ? attachmentLinks(current, m.attachments, flash, (att) => getChatFileUrl(current, att)) : null]); }));
     msgs.lastElementChild?.scrollIntoView({ block: "nearest" });
   }
   async function send() {
-    const body = box.value.trim(), r = rooms.find((x) => x.id === current); if (!body || !current) return;
-    sendB.disabled = true;
+    const body0 = box.value.trim(), files = pick.files(), r = rooms.find((x) => x.id === current); if ((!body0 && !files.length) || !current) return;
+    sendB.disabled = true; if (files.length) sendB.textContent = "Uploading…";
     try { const outsiders = r && isSupport(r);
-      await addDoc(collection(db, "chatRooms", current, "messages"), { uid, name: outsiders ? (r.issue ? "Admin" : "Callaway Analyst") : myName, body: body.slice(0, 2000), createdAt: serverTimestamp() });
-      await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
+      const attachments = files.length ? await uploadChatFiles(current, files, uid) : [], body = body0 || attachments.map((a) => `\u{1F4CE} ${a.name}`).join(", ");
+      await addDoc(collection(db, "chatRooms", current, "messages"), { uid, name: outsiders ? (r.issue ? "Admin" : "Callaway Analyst") : myName, body: body.slice(0, 2000), ...(attachments.length ? { attachments, ...(body0 ? {} : { fileOnly: true }) } : {}), createdAt: serverTimestamp() });
+      pick.clear();
+      await updateDoc(doc(db, "chatRooms", current), { lastAt: serverTimestamp(), lastText: (body0 || "\u{1F4CE} Attachment").slice(0, 120), lastBy: uid }).catch(() => {});
       // answering one nobody has (or one marked done that they wrote to again) makes it yours
       if (outsiders) { const s = statusOf(r); if (s.k === "open" || s.reopened) await setTriage(r.id, { state: "working", by: uid, assignedBy: null }); }
       box.value = ""; box.focus(); }
-    catch { flash("Couldn't send that. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
-    finally { sendB.disabled = false; }
+    catch (e) { flash(e?.message && /file|MB|too (big|large|many)/i.test(e.message) ? e.message : "Couldn't send that. (Republish the Firestore rules from the latest update if you haven't.)", "error"); }
+    finally { sendB.disabled = false; sendB.textContent = "Send"; }
   }
   draw();
   return () => { stopMsgs(); unsubs.forEach((f) => { try { f(); } catch { /* */ } }); };

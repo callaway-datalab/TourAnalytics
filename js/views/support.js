@@ -7,6 +7,8 @@ import { collection, addDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, orderBy
 import { db, adminUids } from "../firebase-init.js";
 import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
+import { attachPicker, attachmentLinks } from "../attachments.js"; // (update 896) files with a message
+import { uploadChatFiles, getChatFileUrl } from "../store.js";
 
 const TOPICS = [
   { k: "issue", icon: "⚠", title: "Report an issue", sub: "Something wrong or not working", ph: "What went wrong? What were you doing when it happened?", tag: "Issue" },
@@ -36,11 +38,14 @@ export async function render(main, { flash = () => {} } = {}) {
     if (!snap.exists()) await setDoc(ref, { type: "group", ...base, members: [uid, ...team], createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "" });
     else if (!team.every((x) => snap.data().members.includes(x))) await updateDoc(ref, { members: [...new Set([...snap.data().members, ...team])] }).catch(() => {});
   }
-  async function send(topic, text) {
-    const t = TOPICS.find((x) => x.k === topic), body = `${t ? `[${t.tag}] ` : ""}${text}${topic === "issue" && prevPage ? `\n\n(Page: ${prevPage})` : ""}`.slice(0, 2000);
+  async function send(topic, text, files = []) {
+    const t = TOPICS.find((x) => x.k === topic);
     const roomId = topic ? roomOf(topic) : lastRoom || roomOf("question");
     await ensureRoom(roomId, topic || roomTopic(roomId));
-    await addDoc(collection(db, "chatRooms", roomId, "messages"), { uid, name: myName, body, ...(topic ? { topic } : {}), createdAt: serverTimestamp() });
+    const attachments = files.length ? await uploadChatFiles(roomId, files, uid) : [];
+    const text1 = text || attachments.map((a) => `\u{1F4CE} ${a.name}`).join(", ");
+    const body = `${t ? `[${t.tag}] ` : ""}${text1}${topic === "issue" && prevPage ? `\n\n(Page: ${prevPage})` : ""}`.slice(0, 2000);
+    await addDoc(collection(db, "chatRooms", roomId, "messages"), { uid, name: myName, body, ...(topic ? { topic } : {}), ...(attachments.length ? { attachments, ...(text ? {} : { fileOnly: true }) } : {}), createdAt: serverTimestamp() });
     await updateDoc(doc(db, "chatRooms", roomId), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
   }
 
@@ -51,15 +56,16 @@ export async function render(main, { flash = () => {} } = {}) {
   const sendB = el("button", { type: "button", class: "btn" }, "Send");
   const cancelB = el("button", { type: "button", class: "btn ghost" }, "Cancel");
   const composeT = el("h3", {});
-  const compose = el("section", { class: "panel sp-compose", hidden: true }, [composeT, box, msg, el("div", { class: "sp-btns" }, [cancelB, sendB])]);
+  const pick = attachPicker(), pickR = attachPicker();
+  const compose = el("section", { class: "panel sp-compose", hidden: true }, [composeT, box, pick.node, msg, el("div", { class: "sp-btns" }, [cancelB, sendB])]);
   const cards = el("div", { class: "sp-cards" }, TOPICS.map((t) => { const b = el("button", { type: "button", class: `sp-card sp-${t.k}` }, [el("span", { class: "sp-ico", "aria-hidden": "true" }, t.icon), el("strong", {}, t.title), el("span", { class: "muted small" }, t.sub)]);
     b.addEventListener("click", () => { topic = t.k; composeT.textContent = t.title; box.placeholder = t.ph; compose.hidden = false; cards.querySelectorAll(".sp-card").forEach((x) => x.classList.toggle("on", x === b)); msg.textContent = ""; box.focus(); }); return b; }));
   cancelB.addEventListener("click", () => { compose.hidden = true; topic = null; box.value = ""; cards.querySelectorAll(".sp-card").forEach((x) => x.classList.remove("on")); });
   sendB.addEventListener("click", async () => {
-    const text = box.value.trim(); if (!text) { msg.textContent = "Write a line or two first."; box.focus(); return; }
-    sendB.disabled = true; sendB.textContent = "Sending…";
-    try { await send(topic, text); box.value = ""; compose.hidden = true; cards.querySelectorAll(".sp-card").forEach((x) => x.classList.remove("on")); flash("Sent. Callaway will reply here.", "info"); }
-    catch (e) { console.warn(e); msg.textContent = "Couldn't send that just now. Try again in a moment."; }
+    const text = box.value.trim(), files = pick.files(); if (!text && !files.length) { msg.textContent = "Write a line or two first (or attach a file)."; box.focus(); return; }
+    sendB.disabled = true; sendB.textContent = files.length ? "Uploading…" : "Sending…";
+    try { await send(topic, text, files); box.value = ""; pick.clear(); compose.hidden = true; cards.querySelectorAll(".sp-card").forEach((x) => x.classList.remove("on")); flash("Sent. Callaway will reply here.", "info"); }
+    catch (e) { console.warn(e); msg.textContent = e?.message && /file|MB|too (big|large|many)/i.test(e.message) ? e.message : "Couldn't send that just now. Try again in a moment."; }
     finally { sendB.disabled = false; sendB.textContent = "Send"; }
   });
 
@@ -67,7 +73,8 @@ export async function render(main, { flash = () => {} } = {}) {
   const list = el("ol", { class: "sp-list" }, el("li", { class: "muted" }, "Loading…"));
   const reply = el("textarea", { rows: 2, maxLength: 1900, placeholder: "Reply…", class: "sp-reply", "aria-label": "Reply" });
   const replyB = el("button", { type: "button", class: "btn" }, "Send");
-  replyB.addEventListener("click", async () => { const t = reply.value.trim(); if (!t) return; replyB.disabled = true; try { await send(null, t); reply.value = ""; } catch { flash("Couldn't send that just now.", "error"); } finally { replyB.disabled = false; } });
+  replyB.addEventListener("click", async () => { const t = reply.value.trim(), files = pickR.files(); if (!t && !files.length) return; replyB.disabled = true; replyB.textContent = files.length ? "Uploading…" : "Send";
+    try { await send(null, t, files); reply.value = ""; pickR.clear(); } catch (e) { flash(e?.message && /file|MB|too (big|large|many)/i.test(e.message) ? e.message : "Couldn't send that just now.", "error"); } finally { replyB.disabled = false; replyB.textContent = "Send"; } });
   const byRoom = new Map(), ms = (t) => (t?.toMillis ? t.toMillis() : 0);
   function roomTopic(id) { const m = /^sup_(issue|question|feature)_/.exec(id); return m ? m[1] : null; }
   const replyTo = el("span", { class: "muted small sp-replyto" });
@@ -78,7 +85,7 @@ export async function render(main, { flash = () => {} } = {}) {
     if (!all.length) { mount(list, el("li", { class: "sp-empty muted" }, "Nothing here yet. Pick one of the three above to get in touch: Callaway's analysts and the admin will reply here.")); return; }
     mount(list, all.map((m) => { const mine = m.uid === uid, t = TOPICS.find((x) => x.k === m.topic) || (/^\[(Issue|Question|Feature request)\]/.exec(m.body || "") ? TOPICS.find((x) => m.body.startsWith(`[${x.tag}]`)) : null);
       const body = String(m.body || "").replace(/^\[(Issue|Question|Feature request)\]\s*/, "");
-      return el("li", { class: `sp-m${mine ? " mine" : ""}` }, [el("div", { class: "sp-who" }, [el("strong", {}, mine ? "You" : "Callaway Analyst"), t ? el("span", { class: `sp-tag sp-${t.k}` }, t.tag) : null, el("span", { class: "muted small" }, formatWhen(m.createdAt))]), el("p", {}, body)]); }));
+      return el("li", { class: `sp-m${mine ? " mine" : ""}` }, [el("div", { class: "sp-who" }, [el("strong", {}, mine ? "You" : "Callaway Analyst"), t ? el("span", { class: `sp-tag sp-${t.k}` }, t.tag) : null, el("span", { class: "muted small" }, formatWhen(m.createdAt))]), el("p", {}, m.fileOnly ? "" : body), m.attachments?.length ? attachmentLinks(m.room, m.attachments, flash, (att) => getChatFileUrl(m.room, att)) : null]); }));
     list.lastElementChild?.scrollIntoView({ block: "nearest" });
     for (const id of byRoom.keys()) markRead(uid, id);
   };
@@ -88,7 +95,7 @@ export async function render(main, { flash = () => {} } = {}) {
   mount(main, el("div", { class: "sp" }, [
     el("header", { class: "page-head" }, [el("h1", {}, "Chat & support"), el("p", { class: "muted" }, caOk ? "Everything you send here goes to Callaway's analysts and the admin, and they reply here." : "Everything you send here goes to the admin, who replies here.")]),
     cards, compose,
-    el("section", { class: "panel sp-conv" }, [el("h3", {}, caOk ? "Your conversation with Callaway" : "Your conversation with the admin"), list, replyTo, el("div", { class: "sp-replyrow" }, [reply, replyB])]),
+    el("section", { class: "panel sp-conv" }, [el("h3", {}, caOk ? "Your conversation with Callaway" : "Your conversation with the admin"), list, replyTo, el("div", { class: "sp-replyrow" }, [reply, replyB]), pickR.node]),
   ]));
   return () => unsubs.forEach((f) => { try { f(); } catch { /* */ } });
 }
