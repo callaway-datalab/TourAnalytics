@@ -7,6 +7,7 @@ const flash = () => {};
 export async function fill(box, kind, me, { st }) {
   const pv = window.__previewClient || null, name = me.label || me.key.replace(/^c_/, "");
   if (kind === "overview") { const m = await import("./views/dossier.js"); return m.overview(box, me.key, name); }
+  if (kind === "scout" && !window.__taScout) { mount(box, el("div", { class: "ip ip-embed" }, el("p", { class: "muted" }, "Scouting isn't open for your account. Ask Callaway to turn it on."))); return; } // (update 891)
   if (kind === "scout") { const m = await import("./views/scouting.js"); return m.scoutTab(box, me.key, name); } // (update 889)
   if (kind === "fit") { const m = await import("./views/courseFit.js"); return m.fitTab(box, me.key, name); }
   // (update 829) What's in the Bag, for the player Stats has

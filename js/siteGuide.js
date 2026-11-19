@@ -39,7 +39,7 @@ export const FEATURES = [
     keys: "course fit suit suits best courses which courses where should they play schedule fit misses" },
   { name: "Comparisons", where: "Stats › Comparisons", view: "compare", what: "two or more players side by side in any part of the game",
     keys: "compare comparison versus vs head to head side by side against" },
-  { name: "Scouting", where: "Stats › Scouting", view: "scout", what: "scouting reports: grades on the 20-80 scale (now, next season, ceiling, each part of the game), odds of a top-10 / 25 / 50 season next year, comps (the most similar past seasons and what came next), fast risers, and every player's career trajectory: year-end strokes-gained rank each season and the change, seasons improving in a row, the rolling rank over the last 24 rounds now and a year ago, OWGR when the stats file has it; tap a player for their career chart and seasons",
+  { name: "Scouting", where: "Stats › Scouting", view: "scout", need: "scout" /* (update 891: only with access) */, what: "scouting reports: grades on the 20-80 scale (now, next season, ceiling, each part of the game), odds of a top-10 / 25 / 50 season next year, comps (the most similar past seasons and what came next), fast risers, and every player's career trajectory: year-end strokes-gained rank each season and the change, seasons improving in a row, the rolling rank over the last 24 rounds now and a year ago, OWGR when the stats file has it; tap a player for their career chart and seasons",
     keys: "comps comparables similar players potential ceiling grade grades 20-80 odds tier projection breakout fast risers riser scouting scout sign signing career trajectory trend improving year over year end of year rank rolling rank rising star prospect owgr world ranking development" },
   { name: "What's in the Bag", where: "Play › What's in the Bag", view: "bag", what: "every club and ball on record, what's in the bag now and how each has done",
     keys: "witb bag clubs equipment driver irons wedges putter ball setup what are they using" },
@@ -65,7 +65,7 @@ const stem = (w) => w.replace(/(ing|ed|es|s)$/, "");
 /** the features that best fit a question, best first: [{ f, score }] */
 export function matchFeatures(q, extra = []) {
   const qs = words(q).map(stem); if (!qs.length) return [];
-  const all = [...FEATURES, ...extra];
+  const all = [...FEATURES, ...extra].filter((f) => f.need !== "scout" || (typeof window !== "undefined" && window.__taScout));
   return all.map((f) => { const ks = new Set(words(`${f.keys || ""} ${f.name}`).map(stem)), nm = words(f.name).map(stem);
     let s = 0; for (const w of qs) { if (ks.has(w)) s += 2; else if ([...ks].some((k) => k.length > 3 && (k.startsWith(w) || w.startsWith(k)))) s += 1; }
     for (const w of nm) if (qs.includes(w)) s += 1; // (its name said)

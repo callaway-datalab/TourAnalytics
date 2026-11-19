@@ -241,6 +241,13 @@ async function render() {
     window.__taCoachFor = state.user?.uid; window.__taCoach = false;
     import("./store.js").then((m) => m.myCoachAccess(state.profile.inviteCode)).then((on) => { window.__taCoach = !!on; }).catch(() => {});
   }
+  // (update 891) Scouting: the admin (not while looking at someone's portal: it shows what they'd see), and anyone whose
+  // access code has Scouting ticked on User Access; checked once per sign-in
+  { const pv = !!(previewClient || getPreviewTeam());
+    if (state.isAdmin && !pv) window.__taScout = true;
+    else if (pv) window.__taScout = false;
+    else if (window.__taScoutFor !== state.user?.uid) { window.__taScoutFor = state.user?.uid;
+      window.__taScout = state.profile?.inviteCode ? await import("./store.js").then((m) => m.myScoutAccess(state.profile.inviteCode)).catch(() => false) : false; } }
   // (update 522) Course Prep is open to everyone too
   if (routeId === "team") {
     const keys = teamKeys();

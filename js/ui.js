@@ -131,7 +131,7 @@ const sectionsFor = (kind) => {
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
     // (update 505) Watchlist, Stats, Compare, Leaderboards
     // (update 833) Stats' views are its row of pages (the tabs that were on the page): each opens Stats on that view
-    ...STATS_VIEWS.filter(([v]) => !PLAY_VIEWS.includes(v)).map(statsItem), // (update 858: What's in the Bag and Practice & Goals are under Play)
+    ...STATS_VIEWS.filter(([v]) => !PLAY_VIEWS.includes(v) && (v !== "scout" || window.__taScout)).map(statsItem), /* (update 891: Scouting only with access) */ // (update 858: What's in the Bag and Practice & Goals are under Play)
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
     // (update 817) the Player Dossier (Overview), Course Fit and Practice & Goals are tabs on Stats now

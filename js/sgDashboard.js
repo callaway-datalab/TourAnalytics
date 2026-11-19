@@ -412,7 +412,7 @@ export function sgDashboard(container, opts) {
     const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "focus"); // (update 505: Full stats unless Focus is picked)
     const resultsOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "results"); // (update 756: Tournament Results)
     // (update 817) Overview (the player's page: what Stats opens on), Course Fit (every course for them), Practice & Goals
-    const tabOn = me && isSG() && !opts.emptyNote ? (["fit", "practice", "compare", "bag", "scout"].includes(st.view2) ? st.view2 : null) : null; // (update 838: Player Stats (full) unless another page is picked; no Overview)
+    const tabOn = me && isSG() && !opts.emptyNote ? (["fit", "practice", "compare", "bag", ...(window.__taScout ? ["scout"] : [])].includes(st.view2) ? st.view2 : null) : null; // (update 838: Player Stats (full) unless another page is picked; no Overview)
     const noShotF = { ...f, cats: [], lie: [], dist: [], club: [], gear: [] };
     const focusMine = focusOn ? nz(applyFilters(me.rounds, noShotF)) : null;
     const focusField = focusOn ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...rankF, cats: [], lie: [], dist: [], club: [], gear: [] })) })) : null;
