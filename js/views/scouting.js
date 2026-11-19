@@ -100,7 +100,7 @@ export async function scoutTab(box, key0, name0) {
     const minSel = el("select", { class: "ip-sel", "aria-label": "Seasons ranked" }, [1, 2, 3].map((n) => el("option", { value: String(n), ...(n === minSeasons ? { selected: true } : {}) }, n === 1 ? "Any players" : `${n}+ seasons ranked`)));
     minSel.addEventListener("change", () => { minSeasons = Number(minSel.value); drawBoard(); });
     const detail = el("div", { class: "sc-detail" }), boardBox = el("div", {});
-    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim(), el("span", { class: "sc-ver", title: "The version of this page" }, " · v906")]), el("h2", { class: "ip-h" }, "Scouting"),
+    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim()]), el("h2", { class: "ip-h" }, "Scouting"),
       el("p", { class: "muted" }, "How good is a player, is he getting better, and where is he likely to finish next season? Pick a player below for a plain-English report.")])),
       // (update 903) how to read it, in three lines
       el("div", { class: "sc-how" }, [el("strong", {}, "How to read this page"), el("ul", {}, [
