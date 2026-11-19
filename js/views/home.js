@@ -1751,11 +1751,17 @@ export async function render(main, { previewClient } = {}) {
           if (HA.length >= 9) { const rowsA = HA.map((o) => ({ h: o.h, par: o.par, f: o.b - o.g, b: o.b, g: o.g, d2: o.d2 || 0 })), byA = [...rowsA].sort((a, b) => b.f - a.f), hi = byA[0], lo = byA.at(-1), pcA = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.round(Math.abs(v) * 100)}`;
             // (update 868) the blow-up holes: the most doubles or worse (6% of plays or more), up to 3
             const blow = [...rowsA].filter((o) => o.d2 >= 0.06).sort((a, b) => b.d2 - a.d2).slice(0, 3); for (const o of blow) o.blow = true; const pc0 = (v) => `${Math.round(v * 100)}%`;
+            // (update 897) the par 3s, 4s and 5s as groups: when one kind of hole is clearly where the scoring is (its average index
+            // 15+ points above the next), say so, with what those holes give back against par in a round
+            const parG = [3, 4, 5].map((pp) => { const xs = HA.filter((o) => o.par === pp); if (!xs.length) return null; const av = (f) => xs.reduce((t, o) => t + f(o), 0) / xs.length;
+              return { pp, n: xs.length, f: av((o) => o.b - o.g), b: av((o) => o.b), g: av((o) => o.g), toPar: xs.reduce((t, o) => t + (o.avg || 0), 0), up: xs.filter((o) => o.b - o.g > 0.02).length }; }).filter(Boolean).sort((a, b) => b.f - a.f);
+            const parLine = parG.length >= 2 && parG[0].f - parG[1].f >= 0.15 && parG[0].f >= 0.05 && parG[0].up * 2 >= parG[0].n /* (they really do lean birdie) */ ? (() => { const g0 = parG[0], rest = parG.slice(1), nm = (g) => `par ${g.pp}${g.n === 1 ? "" : "s"}`, sgn = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
+              return `The ${nm(g0)} are where the scoring is: ${g0.up === g0.n ? `all ${g0.n} lean birdie` : `${g0.up} of ${g0.n} lean birdie`} (average index ${pcA(g0.f)}: ${pc0(g0.b)} birdie or better, ${pc0(g0.g)} bogey or worse; ${sgn(g0.toPar)} to par a round across them), against ${rest.map((g) => `the ${nm(g)} ${pcA(g.f)} (${sgn(g.toPar)} to par)`).join(" and ")}. Make the birdies on the ${nm(g0)} and avoid giving shots back elsewhere`; })() : null;
             out.push({ id: "up-agg", k: null, kind: "Course", score: 4.85, title: `Attack No. ${hi.h}, hold back on No. ${lo.h}`,
-              x: { agg: { rows: rowsA } }, detail: [`No. ${hi.h} (par ${hi.par}): the field makes birdie or better ${pc0(hi.b)} of the time and bogey or worse ${pc0(hi.g)}, an aggressiveness index of ${pcA(hi.f)}`,
+              x: { agg: { rows: rowsA } }, detail: [parLine, `No. ${hi.h} (par ${hi.par}): the field makes birdie or better ${pc0(hi.b)} of the time and bogey or worse ${pc0(hi.g)}, an aggressiveness index of ${pcA(hi.f)}`,
                 `No. ${lo.h} (par ${lo.par}): ${pc0(lo.b)} birdie or better, ${pc0(lo.g)} bogey or worse (${pcA(lo.f)})`,
                 blow.length ? `Blow-up holes to avoid: ${blow.map((o) => `No. ${o.h} (${pc0(o.d2)} double bogey or worse)`).join(", ")}` : "No blow-up holes: none has 6% or more doubles or worse",
-                "Aggressiveness index: birdie or better % minus bogey or worse %, the field's, every hole below"].join(" · "),
+                "Aggressiveness index: birdie or better % minus bogey or worse %, the field's, every hole below"].filter(Boolean).join(" · "),
               to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, hi.h, EX.hole(`How should I play hole ${hi.h}?`)) }); }
           if (up && DV(up) >= 0.3 && rows.length >= 4) out.push({ id: "up-att", k: null, kind: "Course", score: 4.86, x: { att: { rows, mine: nOwn ? (isMe(one) ? "You" : nameOf(one)) : null } },
             title: `Expect more ${WH[up.cat]} from ${lb(up)} at ${U.name}`,
