@@ -62,7 +62,13 @@ export function scoutModel(B) {
     const sol = solve3(A, v); if (sol) { const res = X.map((r, i) => Y[i] - (sol[0] + sol[1] * r[1] + sol[2] * r[2])); fit = { a: sol[0], b: sol[1], c: sol[2], s: Math.max(0.2, sd(res)), n: pairs.length, fallback: false }; } }
   const project = (x) => fit.a + fit.b * shr(x) + fit.c * (x.d ?? 0);
   // grades: each part's spread over every player-season
-  const gradeOf = (v, k) => grade((v - st[k].m) / st[k].s);
+  // (update 894) grades from where the number would rank: its percentile among the latest full season's ranked players
+  // (that season's every player with the minimum rounds), turned into the 20-80 scale (50 the middle player; 60 about
+  // the top 16%, 70 the top 2%, 80 the very top), so a grade and a rank always agree
+  const refY = full.at(-1) || lastY, ref = [...season[refY].by.values()], refOf = { sg: ref.map((o) => o.sg).sort((a, b) => a - b), ...Object.fromEntries(CATS.map((c) => [c, ref.map((o) => o.cat[c]).sort((a, b) => a - b)])) };
+  const pctOf = (v, k) => { const a = refOf[k]; if (!a.length) return 0.5; let lo = 0; while (lo < a.length && a[lo] < v) lo++; let hi = lo; while (hi < a.length && a[hi] === v) hi++; return Math.min(0.995, Math.max(0.005, (lo + (hi - lo) / 2) / a.length)); };
+  const gradeOf = (v, k) => grade(invPhi(pctOf(v, k)));
+  const rankLike = (v, k = "sg") => Math.max(1, Math.round((1 - pctOf(v, k)) * refOf[k].length) + 1); // (the rank that number would have had in the latest full season)
   const memo = new Map();
   function scout(k) {
     if (memo.has(k)) return memo.get(k);
@@ -74,8 +80,8 @@ export function scoutModel(B) {
     const odds = Object.fromEntries(tiers.map((t) => { const line = tierLine[t];
       const model = line == null ? null : 1 - Phi((line - proj) / fit.s), cohort = wSum ? comps.reduce((s, c) => s + (c.x.next.rank <= t ? c.w : 0), 0) / wSum : null;
       const p = model == null ? cohort : cohort == null ? model : wC * cohort + (1 - wC) * model; return [t, { p, model, cohort }]; }));
-    const grades = { now: gradeOf(shr(cur) , "sg"), ceil: gradeOf(proj + 0.84 * fit.s, "sg"), proj: gradeOf(proj, "sg"),
-      tools: Object.fromEntries(CATS.map((c) => [c, gradeOf(cur[c] * cur.n / (cur.n + SHRINK), c)])) };
+    const grades = { now: gradeOf(cur.sg, "sg"), ceil: gradeOf(proj + 0.84 * fit.s, "sg"), proj: gradeOf(proj, "sg"),
+      tools: Object.fromEntries(CATS.map((c) => [c, gradeOf(cur[c], c)])), projRank: rankLike(proj), ceilRank: rankLike(proj + 0.84 * fit.s), refY, refN: refOf.sg.length };
     // before the breakout: past seasons most like this one that came the year before a top-10 season (not already top 10)
     const pre = pool.filter((x) => x.k !== k && x.next.rank <= 10 && x.rank > 10).map((x) => ({ x, d: dist(cur, x) })).sort((a, b) => a.d - b.d).slice(0, 3).map((c) => ({ ...c, sim: simOf(c.d) }));
     const out = { cur, mine, comps, effN, proj, lo: proj - 1.2816 * fit.s, hi: proj + 1.2816 * fit.s, odds, grades, pre, wC };
@@ -84,9 +90,17 @@ export function scoutModel(B) {
   const rdSd = sd(P.flatMap((p) => p.rs.map((r) => (r.shots || []).reduce((t, s) => t + (s.sg || 0), 0))).slice(0, 50000));
   const noise = rdSd * Math.sqrt(2 / 24);
   const risers = (B.rows || []).filter((r) => r.now && r.ago).map((r) => { const dv = r.now.v - r.ago.v; return { r, dv, z: dv / noise, dr: r.ago.r - r.now.r }; }).sort((a, b) => b.dv - a.dv);
-  return { ps, byKey, st, fit, tiers, tierLine, fieldN, dRef, scout, risers, noise, rdSd, pool };
+  return { refY, ps, byKey, st, fit, tiers, tierLine, fieldN, dRef, scout, risers, noise, rdSd, pool };
 }
 
+// the inverse of the normal curve (Acklam's approximation): a percentile → standard deviations from the middle
+function invPhi(p) {
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239], b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572],
+    c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783], d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416], pl = 0.02425;
+  if (p < pl) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  if (p > 1 - pl) { const q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  const q = p - 0.5, t = q * q; return (((((a[0] * t + a[1]) * t + a[2]) * t + a[3]) * t + a[4]) * t + a[5]) * q / (((((b[0] * t + b[1]) * t + b[2]) * t + b[3]) * t + b[4]) * t + 1);
+}
 function solve3(A, v) { // Gaussian elimination, 3×3
   const M = A.map((r, i) => [...r, v[i]]);
   for (let i = 0; i < 3; i++) { let p = i; for (let j = i + 1; j < 3; j++) if (Math.abs(M[j][i]) > Math.abs(M[p][i])) p = j; [M[i], M[p]] = [M[p], M[i]]; if (Math.abs(M[i][i]) < 1e-9) return null;

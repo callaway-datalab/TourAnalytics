@@ -37,7 +37,8 @@ export async function scoutTab(box, key0, name0) {
   function build(T) {
     if (memo.has(T)) return memo.get(T);
     const onT = (r) => !T || r.tour === T;
-    const P = field.map((p) => { let rs = p.rounds.filter((r) => onT(r) && !r.eventLevel); if (!rs.length) rs = p.rounds.filter((r) => onT(r)); /* (a tour kept event by event: those) */
+    const P = field.map((p) => { const hasSg = (r) => (r.shots || []).some((x) => x.sg != null && (x.w ?? 1) > 0); /* (update 894: a round with no strokes gained in the file isn't a 0.00 round) */
+      let rs = p.rounds.filter((r) => onT(r) && !r.eventLevel && hasSg(r)); if (!rs.length) rs = p.rounds.filter((r) => onT(r) && hasSg(r)); /* (a tour kept event by event: those) */
       rs = rs.slice().sort((a, b) => dOf(a) - dOf(b)); const ds = rs.map(dOf), cum = [0]; for (const r of rs) cum.push(cum.at(-1) + tot(r));
       return { k: p.key, nm: p.name, birth: p.birth, rs, ds, cum }; }).filter((p) => p.rs.length);
     const years = [...new Set(P.flatMap((p) => p.rs.map(PI.yrOf)))].sort();
@@ -141,12 +142,14 @@ export async function scoutTab(box, key0, name0) {
       const G = sc.grades, cur = sc.cur, gBox = (label, g, sub) => el("div", { class: "sc-gbox" }, [el("span", { class: "sc-gl" }, label), gEl(g), sub ? el("small", { class: "muted" }, sub) : null]);
       const odds = M.tiers.map((t) => { const o = sc.odds[t]; if (!o || o.p == null) return null; return el("div", { class: "sc-odd", title: `Comps: ${pc(o.cohort)} · projection: ${pc(o.model)}` }, [el("span", { class: "sc-ol" }, `Top ${t}`), el("div", { class: "sc-ob" }, el("i", { style: `width:${Math.max(1, Math.round(o.p * 100))}%` })), el("b", {}, pc(o.p))]); });
       const nx = (x) => (x.next ? `${ord(x.next.rank)}${x.next.partial ? " so far" : ""} (${sg2(x.next.sg)})` : "—");
+      const so = cur.partial ? " so far" : "", crk = B.season[cur.y]?.by.get(r.k)?.cr || {};
       return card(`${r.nm} · scouting report`, "#ffcc00", [
-        el("div", { class: "sc-grades" }, [gBox("Now", G.now, `${cur.y}${cur.partial ? " so far" : ""}`), gBox("Next season", G.proj, `${sg2(sc.proj)} per round`), gBox("Ceiling", G.ceil, "a good next season"),
-          ...PI.CATS.map((c) => gBox(PI.CATN[c], G.tools[c], sg2(cur[c])))]),
-        el("p", { class: "muted small" }, `Next season's projection: ${sg2(sc.proj)} strokes gained per round, 80% of the time between ${sg2(sc.lo)} and ${sg2(sc.hi)}. Grades: 20-80 scale, 50 a typical tour player-season, every 10 one standard deviation.`),
+        el("p", { class: "sc-rankline" }, [el("b", {}, `${ord(cur.rank)} of ${cur.of}`), ` on the ${tour || "tour"} in ${cur.y}${so} (${sg2(cur.sg)} strokes gained per round, ${cur.n} rounds)`, r.now ? ` · ${ord(r.now.r)} of ${r.now.n} over the last ${ROLL} rounds (${sg2(r.now.v)})` : ""]),
+        el("div", { class: "sc-grades" }, [gBox("Now", G.now, `${ord(cur.rank)}${so}`), gBox("Next season", G.proj, `${sg2(sc.proj)} · ≈${ord(G.projRank)}`), gBox("Ceiling", G.ceil, `a good season · ≈${ord(G.ceilRank)}`),
+          ...PI.CATS.map((c) => gBox(PI.CATN[c], G.tools[c], `${sg2(cur[c])}${crk[c] ? ` · ${ord(crk[c])}` : ""}`))]),
+        el("p", { class: "muted small" }, `Grades (20-80, scouting's scale) come straight from rank, against the ${G.refY} season's ${G.refN} ranked players: 50 the middle player, 60 about the top 16%, 70 the top 2-3%, 80 the very best; 40 and 30 the same below the middle. ≈ the rank that number would have had in ${G.refY}. Next season's projection: ${sg2(sc.proj)} strokes gained per round, 80% of the time between ${sg2(sc.lo)} and ${sg2(sc.hi)}.`),
         odds.some(Boolean) ? el("div", { class: "sc-odds" }, [el("p", { class: "ip-kick" }, "Odds of next season's year-end rank"), ...odds]) : null,
-        sc.comps.length ? el("div", {}, [el("p", { class: "ip-kick" }, `Comps · the past seasons most like ${r.nm.split(" ").at(-1)}'s ${cur.y}${cur.partial ? " (so far)" : ""}`),
+        sc.comps.length ? el("div", {}, [el("p", { class: "ip-kick" }, `Comps · the past seasons most like ${r.nm.split(" ").at(-1)}'s ${cur.y}${cur.partial ? " (so far)" : ""}`), el("p", { class: "muted small" }, `Players whose season looked like his (${ord(cur.rank)}, ${sg2(cur.sg)} per round, and the same shape: strong and weak in the same parts of the game) and what they did the season after. That's why they sit near his rank.`),
           el("div", { class: "ip-tw" }, el("table", { class: "ip-t sc-comps" }, [el("thead", {}, el("tr", {}, ["Player", "Season", "Similarity", "That season", "Next season"].map((h, i) => el("th", { class: i > 1 ? "num" : null }, h)))),
             el("tbody", {}, sc.comps.slice(0, 8).map((c) => el("tr", {}, [el("td", { class: "sc-nm" }, c.x.nm), el("td", {}, `${c.x.y}${c.x.age != null ? ` (age ${Math.floor(c.x.age)})` : ""}`), el("td", { class: "num strong" }, String(c.sim)),
               el("td", { class: "num" }, `${ord(c.x.rank)} (${sg2(c.x.sg)})`), el("td", { class: `num strong ${c.x.next.rank < c.x.rank ? "pos" : c.x.next.rank > c.x.rank ? "neg" : ""}` }, nx(c.x))])))]))]) : null,
@@ -187,7 +190,7 @@ function careerChart(pts, yrPts, hasOw, boxW = 640) {
   const mx = Math.max(10, ...roll.map((x) => x.rr.r), ...yrPts.map((x) => x.o.rank), ...ow.map((x) => x.ow));
   // a square-root scale: the top of the ranks gets more room (1st to 10th matters more than 150th to 160th)
   const X = (t) => L + ((t - t0) / (t1 - t0)) * (W - L - R), Y = (r) => T + (Math.sqrt(Math.max(1, r)) - 1) / (Math.sqrt(mx) - 1) * (H - T - Bm);
-  const ticks = [1, 5, 10, 25, 50, 100, 150, 200, 300].filter((v) => v <= mx);
+  const ticks = [1, 5, 10, 25, 50, 100, 150, 200, 300, 400, 500, 700].filter((v) => v <= mx); // (update 894: the whole scale, down to the lowest rank shown)
   const g = [];
   for (const v of ticks) g.push(sv("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), class: "sc-grid" }), sv("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", class: "sc-ax" }, String(v)));
   const y0 = new Date(t0).getFullYear(), y1 = new Date(t1).getFullYear();

@@ -1310,3 +1310,4 @@ th.bs-lastn .peak-len { top: 0 !important; margin: 0 !important; }
 .ib .ip-pill:hover { background: rgba(255,255,255,0.06); } .ib .ib-filters .ip-pill.on { background: #f2f2f7; color: #111; border-color: #f2f2f7; }
 html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; color: #fff; border-color: #1c1c1e; }
 .ib .ib-acts .ib-claim { border-color: #30d158; color: #30d158; } .ib .ib-acts .ib-claim:hover { background: rgba(48,209,88,0.12); }
+.sc .sc-rankline { margin: 2px 0 10px; font-size: 1rem; } .sc .sc-rankline b { font-size: 1.15rem; color: #ffcc00; }
