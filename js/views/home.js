@@ -492,7 +492,7 @@ export async function render(main, { previewClient } = {}) {
   function openPop(h) {
     document.querySelector(".td-popwrap")?.remove();
     const d = dress(h), x = h.x || {}, t = h.id.split("-")[0], parts = [];
-    if (h.hole && h.cid) { const meta = heat?.find((m) => m.id === h.cid); if (meta) { const img = el("img", { class: "td-pop-hole", alt: `Hole ${h.hole}` }); import("../courseHeat.js").then((m) => m.heatImage(meta, h.hole)).then((u) => { if (u) img.src = u; else img.remove(); }).catch(() => img.remove()); parts.push(img); } }
+    if (h.hole && h.cid) { const meta = heat?.find((m) => m.id === h.cid); if (meta) { const img = el("img", { class: "td-pop-hole", alt: `Hole ${h.hole}` }); import("../courseHeat.js").then((m) => m.heatImage(meta, h.hole)).then((u) => { if (u) img.src = u; else img.remove(); }).catch(() => img.remove()); parts.push(withTrail(img, h, meta)); } }
     else { const ch = chartFor(h) || (h.k && (h.id.startsWith("eq-") || catOf(h)) ? (() => { const b = storyBars(h, catOf(h)); return b ? el("div", { class: "td-chart" }, b) : null; })() : null); if (ch) parts.push(ch); }
     if (t === "fm" && x.ra) parts.push(formTable(x));
     const placeEl = t === "fm" && x.fRk ? el("p", { class: "td-place td-pop-place" }, formPlace(x)) : null; // (update 854: its place on tour)
@@ -586,8 +586,22 @@ export async function render(main, { previewClient } = {}) {
   // tournament's bars; every part of the game; ability against consistency; a proximity illustration; the hole itself
   const CSHORT = { OTT: "Tee", APP: "Approach", ARG: "Short game", PUTT: "Putting" };
   const TOUR_FT = (c, d) => { const m = /(\d+)\s*-\s*(\d+)/.exec(String(d)) || /(\d+)/.exec(String(d)); if (!m) return null; const mid = m[2] ? (Number(m[1]) + Number(m[2])) / 2 : Number(m[1]); return c === "APP" ? mid * 0.17 : c === "ARG" ? mid * 0.55 : null; };
+  // (update 885) a player's stroke trail over a hole's picture: each shot a dot, a line from shot to shot and into the hole,
+  // coloured by the score (as Strategy Maps' past shots); placed by the image's own size, so it lines up at any width
+  function withTrail(img, h, meta) {
+    const T = h.trail; if (!T?.pts?.length) return img;
+    const NS = "http://www.w3.org/2000/svg", sv = (t, a = {}) => { const n = document.createElementNS(NS, t); for (const [k0, v] of Object.entries(a)) n.setAttribute(k0, v); return n; };
+    const svg = sv("svg", { class: "td-trail", preserveAspectRatio: "none", "aria-hidden": "true" }), box = el("span", { class: "td-trailbox" }, [img, svg]);
+    const col = T.s <= -2 ? "#ffd60a" : T.s === -1 ? "#ff453a" : T.s === 0 ? "#ffffff" : T.s === 1 ? "#64d2ff" : "#5e5ce6";
+    const draw = () => { const hm = meta.holes?.[String(h.hole)] || {}, W = hm.w || img.naturalWidth, H = hm.h || img.naturalHeight; if (!W || !H) return; svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      const pts = [...T.pts, ...(T.pin ? [T.pin] : [])], d = pts.map((q, i) => `${i ? "L" : "M"}${q[0]} ${q[1]}`).join(" "), r0 = Math.max(W, H) / 120;
+      svg.append(sv("path", { d, fill: "none", stroke: "rgba(0,0,0,0.6)", "stroke-width": 4.5, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }), sv("path", { d, fill: "none", stroke: col, "stroke-width": 2.5, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
+      T.pts.forEach((q) => svg.append(sv("circle", { cx: q[0], cy: q[1], r: r0, fill: col, stroke: "#111", "stroke-width": 1, "vector-effect": "non-scaling-stroke" })));
+      if (T.pin) svg.append(sv("circle", { cx: T.pin[0], cy: T.pin[1], r: r0 * 0.8, fill: "#111", stroke: "#fff", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" })); };
+    if (img.complete && img.naturalWidth) draw(); else img.addEventListener("load", draw, { once: true });
+    return box; }
   const holeImg = (h) => { const meta = heat?.find((x) => x.id === h.cid); if (!meta || !h.hole) return null; const img = el("img", { class: "td-hole", alt: `Hole ${h.hole}`, loading: "lazy" });
-    import("../courseHeat.js").then((m) => m.heatImage(meta, h.hole)).then((u) => { if (u) img.src = u; else img.remove(); }).catch(() => img.remove()); return el("div", { class: "td-holewrap" }, img); };
+    import("../courseHeat.js").then((m) => m.heatImage(meta, h.hole)).then((u) => { if (u) img.src = u; else img.remove(); }).catch(() => img.remove()); return el("div", { class: "td-holewrap" }, withTrail(img, h, meta)); };
   const catBars = (all, hot) => barSvg(all.map(([c0, v]) => ({ v, label: CATN[c0], short: CSHORT[c0], hot: c0 === hot })), { note: "By part of the game" });
   function chartFor(h) { try {
     const t = h.id.split("-")[0], x = h.x || {};
@@ -619,7 +633,11 @@ export async function render(main, { previewClient } = {}) {
       const mxS = Math.max(0.001, absV[1] && absV[0] > absV[1] * 2.5 ? absV[1] * 1.3 : absV[0] || 0); // (one outlier doesn't flatten the rest: its bar runs to the edge)
       const barS = (v, c0) => { v = v ?? 0; const w = Math.min(50, (Math.abs(v) / mxS) * 50); return el("div", { class: `td-sk-bar ${c0}` }, [el("i", { style: `width:${w.toFixed(1)}%;${v >= 0 ? "left:50%" : `left:${(50 - w).toFixed(1)}%`}` }), el("span", { class: v >= 0 ? "up" : "down" }, f3(v))]); };
       return el("div", { class: "td-chart td-skill" }, [el("div", { class: "td-kick mute" }, sk.perDist ? `${CATN[sk.cat]} by distance · strokes gained per round ${sk.where}` : sk.perRound ? `Each part of the game · strokes gained per round ${sk.where}` : `${CATN[sk.cat]} by distance · strokes gained a shot ${sk.where}`),
-        el("div", { class: "td-sk-rows" }, sk.bands.map((b0) => el("div", { class: "td-sk-row" }, [el("span", { class: "td-sk-l" }, lbl0(b0)), el("div", {}, [barS(sk.a[b0], "me"), barS(sk.top[b0], "top")])]))),
+        // (update 885) the gap in each row: the top 10 less the other bar, strokes per round
+        el("div", { class: "td-sk-rows" }, [el("div", { class: "td-sk-row td-sk-hd" }, [el("span", {}, ""), el("span", {}, ""), el("span", { class: "td-sk-d" }, "Diff.")]),
+          ...sk.bands.map((b0) => { const dv = sk.a[b0] != null && sk.top[b0] != null ? sk.top[b0] - sk.a[b0] : null;
+            return el("div", { class: "td-sk-row" }, [el("span", { class: "td-sk-l" }, lbl0(b0)), el("div", {}, [barS(sk.a[b0], "me"), barS(sk.top[b0], "top")]), el("span", { class: "td-sk-d" }, dv == null ? "" : f3(dv))]); })]),
+        el("p", { class: "td-sk-note" }, `Diff.: the top 10 less ${sk.who === "Rest of the field" ? "the rest of the field" : sk.who === "You" ? "you" : sk.who.replace(/, .*$/, "")}, strokes gained ${sk.perRound ? "per round" : "a shot"} (how far short of a top 10)`),
         el("div", { class: "td-legend" }, [el("span", { class: "gray" }, sk.who), el("span", { class: "gold" }, "Top 10")])]);
       const g = 0 && groupBars(sk.bands.map((b0) => ({ label: String(b0).replace(/^\w+\|/, "").replace(/ tee shots$/, ""), a: sk.a[b0] ?? 0, b: sk.top[b0] ?? 0 })), { la: sk.who, lb: "Top 10", fmt: (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3) }); /* (update 799: that part of the game by distance; 803: a shot, 3 decimals) */
       return g ? el("div", { class: "td-chart" }, [el("div", { class: "td-kick mute" }, `${CATN[sk.cat]} by distance · strokes gained a shot ${sk.where}`), g, el("div", { class: "td-legend" }, [el("span", { class: "gray" }, sk.who), el("span", { class: "gold" }, "Top 10")])]) : null; }
@@ -1611,8 +1629,10 @@ export async function render(main, { previewClient } = {}) {
       const sg1 = sgOfT(t); for (let i = 0; i < t.qs.length; i++) if (sg1[i] != null) { const c1 = catOfQ(t.qs[i]); P.cat[c1] += sg1[i]; (P.n ||= {})[c1] = (P.n[c1] || 0) + 1; const bk = bandOf(t.qs[i], t.par); if (bk) { (P.band ||= {})[bk] = (P.band[bk] || 0) + sg1[i]; (P.bandN ||= {})[bk] = (P.bandN[bk] || 0) + 1; } }
       if ((t.par || 4) >= 5 && t.s <= -1) { const q2 = t.qs.find((q) => q.st === 2), q3 = t.qs.find((q) => q.st === 3), gs = goShare.get(t.h);
         if (q2 && q3 && q2.d != null && q2.d <= 300 && gs != null) { const g = goOf(arr7(q2), arr7(q3), t.par, null);
-          if (g && g !== "go" && gs >= 0.6) P.notes.push({ h: t.h, yr: t.yr, rd: t.rd, s: t.s, kind: "lay", share: gs, d: q2.d });
-          else if (g === "go" && gs <= 0.4) P.notes.push({ h: t.h, yr: t.yr, rd: t.rd, s: t.s, kind: "go", share: gs, d: q2.d }); } } }
+          // (update 885) the round's stroke trail on the hole kept with it, to draw on the hole's picture (image pixels, the pin last)
+          const pin = pinXY.get(`${t.h}|${t.pid}`), trail = { pts: t.qs.filter((q) => q.x != null && q.y != null).map((q) => [q.x, q.y]), pin: pin ? [pin[0] / pin[2], pin[1] / pin[2]] : null, s: t.s };
+          if (g && g !== "go" && gs >= 0.6) P.notes.push({ h: t.h, yr: t.yr, rd: t.rd, s: t.s, kind: "lay", share: gs, d: q2.d, trail });
+          else if (g === "go" && gs <= 0.4) P.notes.push({ h: t.h, yr: t.yr, rd: t.rd, s: t.s, kind: "go", share: gs, d: q2.d, trail }); } } }
     const per = (G) => Object.fromEntries(cats.map((c0) => [c0, G[c0] / Math.max(1, G.rds.size)]));
     const perBR = (G) => Object.fromEntries(Object.entries(G.band).filter(([kk]) => (G.bandN[kk] || 0) >= 10).map(([kk, v]) => [kk, v / Math.max(1, G.rds.size)])); // (update 849: per round)
     const perB = (G) => Object.fromEntries(Object.entries(G.band).filter(([kk]) => (G.bandN[kk] || 0) >= 10).map(([kk, v]) => [kk, v / G.bandN[kk]])); // (update 803: strokes gained a shot)
@@ -1653,8 +1673,9 @@ export async function render(main, { previewClient } = {}) {
       /* (update 859) a hole's avg is already its score to par (the data's own to-par column): no par to take off again */ const tough = [...H].sort((a, b) => b.avg - a.avg)[0], easy = [...H].sort((a, b) => a.avg - b.avg)[0], pm1 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
       // (update 859) one player shown (and update 866: their own numbers in the talking points' chart when they've played here)
       const one = shownKeys().length === 1 ? shownKeys()[0] : null, P1 = one ? R0.ply?.get(one) || R0.plyName?.get(nmKey(nameOf(one))) : null;
-      const P1ok = !!(P1 && P1.rds.size >= 2), whoA = P1ok ? (isMe(one) ? "You" : `${firstOf(one)}, ${P1.rds.size} rounds here`) : "Rest of the field";
-      const chartA = P1ok ? Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, (P1.cat[c0] || 0) / P1.rds.size])) : Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, R0.catRest?.[c0] ?? 0]));
+      const P1ok = !!(P1 && P1.rds.size >= 2), hs1 = !P1ok && one && playerOf(one) ? sgRounds(rawOf(playerOf(one))).filter(isU) : [], S1ok = hs1.length >= 2; /* (update 885: else their own stats file's rounds at this event) */
+      const whoA = P1ok ? (isMe(one) ? "You" : `${firstOf(one)}, ${P1.rds.size} rounds here`) : S1ok ? (isMe(one) ? "You" : `${firstOf(one)}, ${hs1.length} rounds here`) : "Rest of the field";
+      const chartA = P1ok ? Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, (P1.cat[c0] || 0) / P1.rds.size])) : S1ok ? Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, avgOf(hs1, (r) => inCat(r, c0))])) : Object.fromEntries(cats.map((c0) => [`CAT|${CATN[c0]}`, R0.catRest?.[c0] ?? 0]));
       if (top) out.push({ id: "up-talk", k: null, kind: "Course", score: 5.4, title: `${U.name} is ${/^[aeiou]/i.test(CW[top[0]].replace(/^the /, "")) ? "an" : "a"} ${CW[top[0]].replace(/^the /, "")} week` /* (update 860: "an approach play week") */,
         detail: [`The top 10 here gain ${p2(top[1])} per round more than the rest of the field in ${CATN[top[0]].toLowerCase()}, the most of any part of the game`,
           kb ? `The skill that decides it: ${bl(kb.b)}, worth ${p2(kb.d)} per round between the top 10 and the rest` : null,
@@ -1782,25 +1803,31 @@ export async function render(main, { previewClient } = {}) {
       const R0 = upRaw, P = R0.ply.get(k) || R0.plyName.get(nmKey(nameOf(k))), cat0 = [...R0.catEdge].sort((a, b) => b[1] - a[1]);
       // the skills that win here: the top 10's edge over the rest, by part of the game, against theirs (here when they have
       // 2+ rounds of shots on record, else their season)
-      const mine = P && P.rds.size >= 2 ? Object.fromEntries(cats.map((c0) => [c0, P.cat[c0] / P.rds.size])) : null;
+      // (update 885) their rounds here: the course's shot file when it has 2+ of theirs, else their own stats file's rounds at this
+      // event (the course file can hold only some years or rounds; "hasn't played here" only when neither has them)
+      const fromCourse = !!(P && P.rds.size >= 2), hereS = !fromCourse && x && x.rs.length >= 2 ? x.rs : null, nHere = fromCourse ? P.rds.size : hereS?.length || 0;
+      const mine = fromCourse ? Object.fromEntries(cats.map((c0) => [c0, P.cat[c0] / P.rds.size])) : hereS ? Object.fromEntries(cats.map((c0) => [c0, avgOf(hereS, (r) => inCat(r, c0))])) : null;
       const seasonRs = (playerOf(k) ? sgRounds(rawOf(playerOf(k))) : []).filter((r) => yrOf(r) === seasonYr()), theirs = mine || (seasonRs.length >= 8 ? Object.fromEntries(cats.map((c0) => [c0, avgOf(seasonRs, (r) => inCat(r, c0))])) : null);
       // (update 780) short: the skill that wins here, the player's number in it against the top 10's, and the biggest gap
       if (cat0.length) { const th = (c0) => (mine ? mine[c0] : R0.catRest?.[c0] ?? 0) /* (update 869: not played here: the field's) */, key = cat0[0][0], gap = R0.catTop[key] - th(key), gaps = cats.map((c0) => [c0, R0.catTop[c0] - th(c0)]).sort((a, b) => b[1] - a[1]), src = mine ? "here" : `in ${seasonYr()} (no shots of ${Pw} here on record)`;
         // (update 799) that part of the game by distance: the player's shots here (else the rest of the field) against the top 10's
-        const yrsT = R0.yrs.length ? (R0.yrs.length === 1 ? R0.yrs[0] : `${R0.yrs[0]}-${R0.yrs.at(-1).slice(2)}`) : "", CB = courseBands(R0, key, P?.pk || null, mine ? P.rds.size : -1) || []; /* (update 867: per round) */
-        const mineB = mine && CB.some((b0) => b0.me != null) ? Object.fromEntries(CB.filter((b0) => b0.me != null).map((b0) => [b0.l, b0.me])) : null, seasB = null; /* (update 869: not played here: the field's, not their season) */ /* (update 801: no shots here: their season; 809: the data's ranges) */
+        const yrsT = R0.yrs.length ? (R0.yrs.length === 1 ? R0.yrs[0] : `${R0.yrs[0]}-${R0.yrs.at(-1).slice(2)}`) : "", CB = courseBands(R0, key, fromCourse ? P.pk : null, fromCourse ? P.rds.size : -1) || []; /* (update 867: per round) */
+        const hereB = (() => { if (fromCourse || !hereS) return null; const rsG = (gearData.get(k) || detail?.by.get(k) || []).filter((r) => isU(r) && !r.eventLevel); if (rsG.length < 2) return null; /* (update 885: their own shots at this event, by distance, per round) */
+          const sum = {}, nn = {}; for (const r of rsG) for (const s0 of r.shots || []) if (s0.cat === key && s0.dist) { sum[s0.dist] = (sum[s0.dist] || 0) + s0.sg; nn[s0.dist] = (nn[s0.dist] || 0) + (s0.w || 1); }
+          const o = Object.fromEntries(CB.filter((b0) => (nn[b0.l] || 0) >= 3).map((b0) => [b0.l, sum[b0.l] / rsG.length])); return Object.keys(o).length ? o : null; })();
+        const mineB = fromCourse && CB.some((b0) => b0.me != null) ? Object.fromEntries(CB.filter((b0) => b0.me != null).map((b0) => [b0.l, b0.me])) : hereB, seasB = null; /* (update 869: not played here: the field's, not their season) */ /* (update 801: no shots here: their season; 809: the data's ranges) */
         out.push({ id: `up-skill-${k}`, k, kind: "Course", x: { skill: { cat: key, perRound: true, perDist: true, bands: CB.filter((b0) => b0.top != null).map((b0) => b0.l), a: mineB || seasB || Object.fromEntries(CB.map((b0) => [b0.l, b0.rest])), top: Object.fromEntries(CB.map((b0) => [b0.l, b0.top])), who: mineB ? (me ? "You" : S) : seasB ? `${me ? "You" : S}, ${seasonYr()} season` : "Rest of the field", where: mineB || !seasB ? `at ${U.name}, ${yrsT}` : `(top 10: at ${U.name}, ${yrsT})` } }, score: 5.3, title: `What wins at ${U.name}: ${CATN[key]}`,
           detail: (() => { const tS = R0.shotTop[key], rS = R0.shotRest[key], pS = mine && P?.n?.[key] ? P.cat[key] / P.n[key] : (() => { const rs1 = (gearData.get(k) || detail?.by.get(k) || []).filter((r) => yrOf(r) === seasonYr() && !r.eventLevel); let a = 0, n = 0; for (const r of rs1) for (const s0 of r.shots || []) if (s0.cat === key) { a += s0.sg; n += s0.w || 1; } return n >= 20 ? a / n : null; })();
             void tS; void rS; void pS; // (update 867: per round, as the chart)
             const tR = R0.catTop?.[key], rR = R0.catRest?.[key], pR = mine ? mine[key] : null;
-            return `Strokes gained per round ${CAT_IN[key]} (every round at ${U.name} on record, ${yrsT}): the top 10 ${sg2(tR)}, the rest of the field ${sg2(rR)} · ${pR == null ? `${me ? "You haven't" : `${S} hasn't`} played here on record: the chart is the rest of the field` : `${me ? "You" : S}: ${sg2(pR)} per round here (${P.rds.size} rounds)${tR - pR > 0.005 ? `, ${(tR - pR).toFixed(2)} a round short of the top 10` : ", at top-10 level"}`}`; })(),
+            return `Strokes gained per round ${CAT_IN[key]} (every round at ${U.name} on record, ${yrsT}): the top 10 ${sg2(tR)}, the rest of the field ${sg2(rR)} · ${pR == null ? ((P?.rds.size || 0) + (x?.rs.length || 0) > 0 ? `Only 1 round of ${me ? "yours" : poss(S)} here on record, too few to judge: the chart is the rest of the field` : `${me ? "You haven't" : `${S} hasn't`} played here on record: the chart is the rest of the field`) : `${me ? "You" : S}: ${sg2(pR)} per round here (${nHere} rounds)${tR - pR > 0.005 ? `, ${(tR - pR).toFixed(2)} a round short of the top 10` : ", at top-10 level"}`}`; })(),
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, 1, EX.course(`What wins at ${U.name}?`)) }); }
       // their own holes: best and worst against the field, and a par 5 played against the grain
       if (P) { const hs = [...P.holes].filter(([, o]) => o[1] >= 8).map( /* (update 781: 8+ plays of a hole, not 2) */([h, o]) => { const f = R0.fAvg.get(h); return f && f[1] >= 20 ? { h, par: o[2], n: o[1], d: o[0] / o[1] - f[0] / f[1] } : null; }).filter(Boolean).sort((a, b) => a.d - b.d);
         const note = P.notes.sort((a, b) => a.s - b.s)[0];
         if (hs.length >= 6 || note) { const b = hs[0], w = hs.at(-1), sc = (s0) => (s0 <= -2 ? "an eagle" : "a birdie");
           const nl = note ? `In ${note.yr} (round ${note.rd}) on No. ${note.h}, ${he} made ${sc(note.s)} by ${note.kind === "lay" ? `laying up from ${Math.round(note.d)} yds when ${Math.round(note.share * 100)}% of the field went for it` : `going for it from ${Math.round(note.d)} yds when only ${Math.round(note.share * 100)}% of the field did`}` : "";
-          out.push({ id: `up-holes-${k}`, k, kind: "Course", hole: note ? note.h : b?.h, cid: c.id, score: note ? 5.0 : 4.6,
+          out.push({ id: `up-holes-${k}`, k, kind: "Course", hole: note ? note.h : b?.h, cid: c.id, trail: note?.trail?.pts?.length ? note.trail : null, score: note ? 5.0 : 4.6,
             title: note ? `${U.name}: ${me ? "your" : poss(S)} ${note.kind === "lay" ? "lay-up" : "go"} against the grain on No. ${note.h} paid off` : `${U.name}: ${me ? "you score" : `${S} scores`} best on No. ${b.h} and worst on No. ${w.h}`,
             detail: [nl, b && hs.length >= 6 ? `At ${c.name}, No. ${b.h} (par ${b.par}) is ${me ? "your" : poss(S)} best hole: ${me ? "you score" : "they score"} ${(-b.d).toFixed(2)} strokes a play lower than the field's average (${b.n} plays). ${w && w.d > 0.15 ? `On No. ${w.h} (par ${w.par}) ${me ? "you score" : "they score"} ${w.d.toFixed(2)} a play higher than the field: the one to plan for.` : ""}` : ""].filter(Boolean).join(" · ").trim(),
             to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, note ? note.h : b.h, EX.hole(`How should I play hole ${note ? note.h : b.h}?`)) }); } }
