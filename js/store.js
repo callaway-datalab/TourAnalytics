@@ -1114,7 +1114,7 @@ export function markThreadReadByUser(threadId) {
    Keyed by the code, so it can be set before they sign up and follows them after.
    (update 305) the same doc says whether they may message Callaway Analyst: { analyst } (missing = yes). */
 export function watchCalAccess(cb) {
-  return onSnapshot(collection(db, "calAccess"), (snap) => cb(new Map(snap.docs.map((d) => [d.id, { on: !!d.data().on, analyst: d.data().analyst !== false, coach: !!d.data().coach, scout: !!d.data().scout /* (update 891) */, playerChat: d.data().playerChat ?? null }]))), () => cb(new Map()));
+  return onSnapshot(collection(db, "calAccess"), (snap) => cb(new Map(snap.docs.map((d) => [d.id, { on: !!d.data().on, analyst: d.data().analyst !== false, coach: !!d.data().coach, scout: !!d.data().scout, staff: !!d.data().staff /* (update 891) */, playerChat: d.data().playerChat ?? null }]))), () => cb(new Map()));
 }
 export async function setCalAccess(code, on) {
   await setDoc(doc(db, "calAccess", code), { on: !!on, updatedAt: serverTimestamp() }, { merge: true });
@@ -1129,6 +1129,21 @@ export async function setPlayerChatAccess(code, on) {
 /** (update 371) Allow coaching: may they send practice plans to the players they work with (off unless turned on). */
 export async function setCoachAccess(code, on) {
   await setDoc(doc(db, "calAccess", code), { coach: !!on, updatedAt: serverTimestamp() }, { merge: true });
+}
+/** (update 895) Analyst: an Employee who answers Chat & support with the admin (the support inbox and the team's chat). */
+export async function setStaffAccess(code, on) {
+  await setDoc(doc(db, "calAccess", code), { staff: !!on, updatedAt: serverTimestamp() }, { merge: true });
+}
+export async function myStaffAccess(inviteCode) {
+  if (!inviteCode) return false;
+  try { const s = await getDoc(doc(db, "calAccess", inviteCode)); return !!(s.exists() && s.data().staff); } catch { return false; }
+}
+/** (update 895) the Analyst user type is gone: an analyst is an Employee with Analyst ticked. Turns each old one into that. */
+export async function migrateAnalysts(users, invites) {
+  const jobs = [];
+  for (const u of users || []) if (u.kind === "analyst") { jobs.push(updateDoc(doc(db, "users", u.uid), { kind: "employee" })); if (u.inviteCode) jobs.push(setStaffAccess(u.inviteCode, true)); }
+  for (const v of invites || []) if (v.kind === "analyst") { jobs.push(updateDoc(doc(db, "invites", v.code), { kind: "employee", note: "Employee" })); jobs.push(setStaffAccess(v.code, true)); }
+  await Promise.all(jobs.map((j) => j.catch(() => {}))); return jobs.length;
 }
 /** (update 891) Scouting: may they open Stats › Scouting (off unless turned on; the admin always can). */
 export async function setScoutAccess(code, on) {

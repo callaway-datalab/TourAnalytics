@@ -7,12 +7,13 @@ import {
   watchInvites, watchUsers, createInvite, revokeInvite, sendPasswordReset, removeUserAccess, adminAllClients,
   UserError, adminStats, editAccess, syncTeams, aiUsage, reportRunsList,
   refreshInvite, deleteInvite, storageEstimate, createAnalystAccess, setAnalystPlayers, syncAllPlayersAnalysts,
-  createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels, watchCalAccess, setCalAccess, setAnalystAccess, setCoachAccess, setScoutAccess, setPlayerChatAccess,
+  createTeamAccess, setTeamPlayers, clearInviteExpiry, syncAccessLabels, watchCalAccess, setCalAccess, setAnalystAccess, setCoachAccess, setScoutAccess, setStaffAccess, migrateAnalysts, setPlayerChatAccess,
 } from "../store.js";
 import { clientKey, formatCode, isTeamKey, roleLabel, ANALYST_ROLE } from "../data.js";
 
-const USER_TYPES = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddie"], ["analyst", "Analyst"], ["employee", "Employee"], ["other", "Other"]];
-const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddie"], ["analyst", "Analyst"], ["employee", "Employee"], ["other", "Other"]];
+// (update 895) no Analyst user type: an analyst is an Employee with Analyst ticked (its own column)
+const USER_TYPES = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddie"], ["employee", "Employee"], ["other", "Other"]];
+const CODE_FILTERS = [["player", "Player"], ["coach", "Coach"], ["caddy", "Caddie"], ["employee", "Employee"], ["other", "Other"]];
 
 export async function render(main, { flash }) {
   let clientsCache = { labels: new Map() };
@@ -518,7 +519,7 @@ export async function render(main, { flash }) {
   function editPerson(inv, user, grants) {
     const isPlayer = !isTeamKey(user?.clientKey ?? inv.clientKey);
     const roles = [...new Set(grants.map((g) => g.role))];
-    const curType = isPlayer ? "player" : inv.kind === "employee" || user?.kind === "employee" ? "employee" : inv.kind === "analyst" || user?.kind === "analyst" ? "analyst"
+    const curType = isPlayer ? "player" : inv.kind === "employee" || user?.kind === "employee" || inv.kind === "analyst" || user?.kind === "analyst" ? "employee"
       : roles[0] === "coach" || roles[0] === "caddy" ? roles[0] : "other";
     const who = user?.name || (isPlayer ? clientsCache.labels.get(inv.clientKey) : inv.clientLabel) || "this person";
     const typeSel = el("select", {}, USER_TYPES.map(([v, l]) => el("option", { value: v, selected: v === curType }, l)));
@@ -567,6 +568,7 @@ export async function render(main, { flash }) {
         save.disabled = true;
         try {
           await editAccess(inv, user, v);
+          if (v.type !== "employee" && calCache.get(inv.code)?.staff) await setStaffAccess(inv.code, false).catch(() => {}); // (update 895: only an Employee can be an analyst)
           dialog.close(); flash(`Saved ${v.name || who}.`, "ok"); refreshClients();
         } catch (err) {
           flash(err?.code === "permission-denied" ? "The database refused that change. Republish the Firestore rules from update 150 (Firebase \u2192 Firestore \u2192 Rules), then try again." : "Couldn't save that change. Try again.", "error");
@@ -689,6 +691,19 @@ export async function render(main, { flash }) {
     });
     return box;
   }
+  // (update 895) Analyst: an Employee who answers Chat & support with the admin (the support inbox and the team's chat);
+  // greyed out for every other user type
+  function staffToggle(inv, user) {
+    const gone = inv.revoked || (inv.usedBy && !user), kind = user?.kind || inv.kind, emp = kind === "employee" || kind === "analyst";
+    const box = el("input", { type: "checkbox", checked: emp && !!calCache.get(inv.code)?.staff, disabled: !!gone || !emp, "aria-label": `Analyst for ${user?.name || inv.clientLabel || formatCode(inv.code)}`, title: emp ? "Let them answer Chat & support and chat with the admin and analysts" : "Only Employees can be analysts" });
+    box.addEventListener("change", async () => {
+      box.disabled = true;
+      try { await setStaffAccess(inv.code, box.checked); const c = calCache.get(inv.code) || {}; calCache.set(inv.code, { ...c, staff: box.checked }); flash(box.checked ? "They're an analyst: the support inbox and the team's chat (from their next visit). Open Chat once so they're added to every conversation." : "No longer an analyst (from their next visit).", "ok"); }
+      catch { box.checked = !box.checked; flash("Couldn\u2019t change that. Try again.", "error"); }
+      box.disabled = false;
+    });
+    return emp ? box : el("span", { class: "muted ac-greyed", title: "Only Employees can be analysts" }, box);
+  }
   // (update 891) Scouting on or off for this person (their code); off unless turned on
   function scoutToggle(inv, user) {
     const gone = inv.revoked || (inv.usedBy && !user);
@@ -735,8 +750,7 @@ export async function render(main, { flash }) {
       // User type: one tag per type (a team member can be e.g. a coach for one player, caddy for another).
       let types, typeLabels;
       if (!isTeamKey(inv.clientKey)) { types = ["player"]; typeLabels = [["player", "Player"]]; }
-      else if (inv.kind === "analyst") { types = ["analyst"]; typeLabels = [["analyst", "Callaway Analyst"]]; }
-      else if (inv.kind === "employee") { types = ["employee"]; typeLabels = [["employee", "Employee"]]; }
+      else if (inv.kind === "employee" || inv.kind === "analyst") { types = ["employee"]; typeLabels = [["employee", "Employee"]]; }
       else {
         types = roles.map((r) => (r === "coach" || r === "caddy" ? r : "other"));
         if (!types.length) types = ["other"];
@@ -764,7 +778,7 @@ export async function render(main, { flash }) {
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Coaching", "Scouting", "Sign-ins", "Last sign-in", "Account created", ""].map((h) => el("th", {}, h)))), /* (update 849: Account created) */
+      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Analyst", "Coaching", "Scouting", "Sign-ins", "Last sign-in", "Account created", ""].map((h) => el("th", {}, h)))), /* (update 849: Account created) */
       el("tbody", {}, rows.flatMap(({ inv, user, grants, typeLabels, email, status, teamOf, teamOfMake }) => { const tr = el("tr", { class: "code-row" }, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
         el("td", {}, [
@@ -775,7 +789,7 @@ export async function render(main, { flash }) {
         el("td", {}, el("span", { class: "type-tags" }, [...typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)), user && fakeMap.has(user.uid) ? el("span", { class: "tag type-fake", title: "A test account you made" }, "Fake") : null])),
         el("td", {}, teamOf),
         el("td", {}, status),
-        el("td", { class: "cal-cell" }, calToggle(inv, user)), el("td", { class: "cal-cell" }, coachToggle(inv, user)), el("td", { class: "cal-cell" }, scoutToggle(inv, user)),
+        el("td", { class: "cal-cell" }, calToggle(inv, user)), el("td", { class: "cal-cell" }, staffToggle(inv, user)), el("td", { class: "cal-cell" }, coachToggle(inv, user)), el("td", { class: "cal-cell" }, scoutToggle(inv, user)),
         el("td", { class: "num" }, user ? num(signSince ? signSince.get(user.uid) || 0 : user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")), /* (update 842: since the reset) */
         el("td", { class: "nowrap" }, user?.lastSignInAt ? formatWhen(user.lastSignInAt) : el("span", { class: "muted" }, user ? "Not yet" : "\u2014")),
         el("td", { class: "nowrap" }, (user?.createdAt || inv.usedAt) ? formatWhen(user?.createdAt || inv.usedAt) : el("span", { class: "muted" }, "\u2014")), /* (update 849) */
@@ -785,7 +799,7 @@ export async function render(main, { flash }) {
       const line = (k, v) => el("div", { class: "cd-line" }, [el("span", { class: "cd-k" }, k), el("span", { class: "cd-v" }, v)]);
       const more = el("tr", { class: "code-more", hidden: true }, el("td", { colspan: "11" }, el("div", { class: "cd-grid" }, [
         line("Code", el("code", {}, formatCode(inv.code))), line("Email", email || "\u2014"), line("Team of", teamOfMake()),
-        line("Cal", calToggle(inv, user)), line("Coaching", coachToggle(inv, user)), line("Scouting", scoutToggle(inv, user)), line("Sign-ins", user ? num(user.signInCount || 0) : "\u2014"),
+        line("Cal", calToggle(inv, user)), line("Analyst", staffToggle(inv, user)), line("Coaching", coachToggle(inv, user)), line("Scouting", scoutToggle(inv, user)), line("Sign-ins", user ? num(user.signInCount || 0) : "\u2014"),
         line("Last sign-in", user?.lastSignInAt ? formatWhen(user.lastSignInAt) : user ? "Not yet" : "\u2014"),
         line("Account created", (user?.createdAt || inv.usedAt) ? formatWhen(user?.createdAt || inv.usedAt) : "\u2014"), /* (update 849) */
         el("div", { class: "cd-actions" }, codeActions(inv, user, grants)),
@@ -853,9 +867,12 @@ export async function render(main, { flash }) {
   const unInv = watchInvites((invites) => {
     invitesCache = invites;
     if (!expiryCleared) { expiryCleared = true; clearInviteExpiry(invites).catch(() => {}); } // codes no longer expire
-    renderInvites(); refreshClients();
+    renderInvites(); refreshClients(); migrateOnce();
   });
-  const unUsers = watchUsers((users) => { usersCache = users; renderInvites(); refreshClients(); });
+  const unUsers = watchUsers((users) => { usersCache = users; renderInvites(); refreshClients(); migrateOnce(); });
+  // (update 895) the old Analyst user type: each becomes an Employee with Analyst ticked (once, when both lists are in)
+  let migrated = false; function migrateOnce() { if (migrated || !usersCache?.length || !invitesCache?.length) return; if (![...usersCache, ...invitesCache].some((x) => x.kind === "analyst")) { migrated = true; return; }
+    migrated = true; migrateAnalysts(usersCache, invitesCache).then((n) => { if (n) flash("Analysts are now Employees with Analyst ticked.", "ok"); }).catch(() => {}); }
   // (update 170) the fake users, to tag them and offer Act as
   import("../fakeUsers.js").then((m) => { unFake = m.watchFakeUsers((map) => { fakeMap = map; renderInvites(); }); }).catch(() => {});
   const clientsInterval = setInterval(refreshClients, 15000);

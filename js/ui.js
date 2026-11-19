@@ -285,9 +285,9 @@ function accountMenu(state) {
   const menu = el("div", { class: "account-menu", role: "menu", hidden: true }, [
     el("a", { class: "menu-item", href: "#/account", role: "menuitem" }, "Profile"),
     state.isAdmin && !window.__previewClient && !getPreviewTeam() ? el("a", { class: "menu-item", href: "#/admin/clients", role: "menuitem" }, "User Access") : null, // (update 832: from the top bar)
-    state.isAdmin || state.profile?.kind === "analyst" ? el("a", { class: "menu-item menu-bulk", href: "#/bulk-reports", role: "menuitem" }, "Bulk Reports") : null, // (update 740)
+    state.isAdmin || state.profile?.kind === "analyst" || window.__taStaff ? el("a", { class: "menu-item menu-bulk", href: "#/bulk-reports", role: "menuitem" }, "Bulk Reports") : null, // (update 740)
     // (update 829) Chat & support: report an issue, ask a question, request a feature (the unread count beside it)
-    el("a", { class: "menu-item menu-chat", href: state.isAdmin ? "#/admin/questions" : "#/questions", role: "menuitem" }, [state.isAdmin || state.profile?.kind === "analyst" ? "Chat" : "Chat & support", el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount))]),
+    el("a", { class: "menu-item menu-chat", href: state.isAdmin ? "#/admin/questions" : "#/questions", role: "menuitem" }, [state.isAdmin || state.profile?.kind === "analyst" || window.__taStaff ? "Chat" : "Chat & support", el("span", { class: "badge", dataset: { unreadBadge: "1" }, hidden: unreadCount < 1 }, String(unreadCount))]),
     state.isAdmin ? el("button", { class: "menu-item menu-perf", type: "button", role: "menuitem", onClick: () => { setOpen(false); import("./perf.js").then((m) => m.togglePerf()); } }, "Performance") : null, // (update 325)
     themeItem(), // (update 731)
     el("button", { class: "menu-item menu-logout", type: "button", role: "menuitem", onClick: () => signOut() }, "Log out"),
@@ -349,7 +349,7 @@ window.addEventListener("hashchange", () => currentAccountMenu?.setOpen(false));
 // (update 281) Cal is on per person (the admin turns him on); the admin always has him
 let calOn = null, calFor = null;
 let caMsgOn = null; // (update 305) may they message Callaway Analyst (null: not known yet = yes)
-export function analystAllowed() { const st = window.__authState; return !!st?.isAdmin || st?.profile?.kind === "analyst" || caMsgOn !== false; }
+export function analystAllowed() { const st = window.__authState; return !!st?.isAdmin || st?.profile?.kind === "analyst" || window.__taStaff || caMsgOn !== false; }
 export function calAllowed() { const st = window.__authState; return !!st?.isAdmin || calOn === true; }
 function checkCal() {
   const st = window.__authState, uid = st?.user?.uid;

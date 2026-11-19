@@ -241,6 +241,9 @@ async function render() {
     window.__taCoachFor = state.user?.uid; window.__taCoach = false;
     import("./store.js").then((m) => m.myCoachAccess(state.profile.inviteCode)).then((on) => { window.__taCoach = !!on; }).catch(() => {});
   }
+  // (update 895) an analyst: an Employee with Analyst ticked on User Access (or the old Analyst type); checked once per sign-in
+  if (window.__taStaffFor !== state.user?.uid) { window.__taStaffFor = state.user?.uid;
+    window.__taStaff = state.profile?.kind === "analyst" || ((state.profile?.kind === "employee" && state.profile?.inviteCode) ? await import("./store.js").then((m) => m.myStaffAccess(state.profile.inviteCode)).catch(() => false) : false); }
   // (update 891) Scouting: the admin (not while looking at someone's portal: it shows what they'd see), and anyone whose
   // access code has Scouting ticked on User Access; checked once per sign-in
   { const pv = !!(previewClient || getPreviewTeam());

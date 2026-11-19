@@ -19,14 +19,17 @@ export function syncChatCircles() {
   return (running ||= (async () => {
     const users = (await getDocs(collection(db, "users"))).docs.map((d) => ({ uid: d.id, ...d.data() }));
     const nameOf = (u) => u.name || u.email || "Someone";
-    const staffIds = [...adminUids, ...users.filter((u) => u.kind === "analyst").map((u) => u.uid)];
+    // (update 895) an analyst: an Employee with Analyst ticked (calAccess/{code}.staff), or the old Analyst type
+    const staffCodes = new Set((await getDocs(collection(db, "calAccess")).catch(() => ({ docs: [] }))).docs.filter((d) => d.data().staff).map((d) => d.id));
+    const isAn = (u) => u.kind === "analyst" || (u.kind === "employee" && u.inviteCode && staffCodes.has(u.inviteCode));
+    const staffIds = [...adminUids, ...users.filter(isAn).map((u) => u.uid)];
     const isStaff = (uid) => staffIds.includes(uid);
     // names and roles
     const names = new Map();
     for (const uid of adminUids) names.set(uid, { name: uid === state.user.uid ? (state.profile?.name || state.user.displayName || "Callaway") : (users.find((u) => u.uid === uid)?.name || "Callaway"), role: "admin", title: "Callaway" });
     for (const u of users) {
       if (names.has(u.uid)) continue;
-      if (u.kind === "analyst") names.set(u.uid, { name: nameOf(u), role: "analyst", title: "Analyst" });
+      if (isAn(u)) names.set(u.uid, { name: nameOf(u), role: "analyst", title: "Analyst" });
       else if (isTeamKey(u.clientKey)) { const r = Object.values(u.access || {})[0]?.role || "team"; names.set(u.uid, { name: nameOf(u), role: "team", title: roleName(r) }); }
       else if (u.clientKey) names.set(u.uid, { name: nameOf(u), role: "player", title: "Player" });
     }

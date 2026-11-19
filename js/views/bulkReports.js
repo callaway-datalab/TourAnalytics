@@ -6,7 +6,7 @@ import { getState } from "../auth.js";
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 
-const allowed = (st) => !!st?.isAdmin || st?.profile?.kind === "analyst";
+const allowed = (st) => !!st?.isAdmin || st?.profile?.kind === "analyst" || !!window.__taStaff; // (update 895)
 async function playersYouCanSee() {
   const state = getState(), team = effectiveTeam(state);
   if (state.isAdmin && !team.preview) { try { return [...(await (await import("../store.js")).adminAllClients()).labels].map(([k, l]) => [k, plainName(l)]); } catch { return []; } }
