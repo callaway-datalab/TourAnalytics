@@ -11,6 +11,10 @@ import * as PI from "../playerInsights.js";
 import { card, samp, sg2, ord } from "./insightPages.js";
 import { lastName } from "../current.js";
 import * as DEF from "../defs.js";
+import { defaultMinRounds } from "../sg.js";
+// (update 904) who's ranked: the same rule as Player Stats (at least 33% of the most rounds anyone played, down to a 5)
+const minRule = (most) => (most >= 15 ? defaultMinRounds(most) : Math.max(1, Math.floor(most * 0.33)));
+const MINTXT = "a third as many rounds as the busiest player or more (as on Player Stats)";
 import { scoutModel } from "../scoutModel.js"; // (update 890) comps, grades, tier odds, risers
 
 const ROLL = 24, DAY = 864e5, YEAR = 365 * DAY;
@@ -45,7 +49,7 @@ export async function scoutTab(box, key0, name0) {
       return { k: p.key, nm: p.name, birth: p.birth, rs, ds, cum, sy }; }).filter((p) => p.rs.length);
     const years = [...new Set(P.flatMap((p) => p.rs.map(PI.yrOf)))].sort();
     // year-end ranks: each season, total and each part of the game, among players with the season's minimum rounds
-    const season = {}; for (const y of years) { const F = P.map((p) => ({ p, rs: p.rs.filter((r) => PI.yrOf(r) === y) })).filter((x) => x.rs.length >= DEF.MIN.seasonRounds);
+    const season = {}; for (const y of years) { const F0 = P.map((p) => ({ p, rs: p.rs.filter((r) => PI.yrOf(r) === y) })), minY = minRule(Math.max(0, ...F0.map((x) => x.rs.length))), F = F0.filter((x) => x.rs.length >= minY);
       const out = new Map(); for (const x of F) out.set(x.p.k, { n: x.rs.length, sg: avg(x.rs, tot), cat: Object.fromEntries(PI.CATS.map((c) => [c, avg(x.rs, (r) => inCat(r, c))])), ow: [...x.rs].reverse().map(owgrOf).find((v) => v != null) ?? null });
       const rankBy = (f, set) => { const l = [...out].sort((a, b) => f(b[1]) - f(a[1])); l.forEach(([k], i) => set(out.get(k), i + 1)); };
       rankBy((o) => o.sg, (o, r) => { o.rank = r; }); for (const c of PI.CATS) rankBy((o) => o.cat[c], (o, r) => { (o.cr ||= {})[c] = r; });
@@ -64,8 +68,9 @@ export async function scoutTab(box, key0, name0) {
         trend: now && ago ? ago.r - now.r : null, ow: ows.length ? ows.at(-1) : null, last: rk.findLast((v) => v != null) ?? null }; });
     // (update 901) the season-to-date rank: strokes gained per round in that season up to the date, against everyone else's
     // season so far, among players with the season's minimum rounds by then (what the year-end rank is, at the season's end)
-    const stdOf = (p, y, t) => { const o = p.sy.get(y); if (!o) return null; const i = ub(o.ds, t); return i >= DEF.MIN.seasonRounds ? o.cum[i] / i : null; };
-    const stdRankAt = (p, y, t) => { const me = stdOf(p, y, t); if (me == null) return null; let r = 1, n = 0; for (const o of P) { const v = stdOf(o, y, t); if (v == null) continue; n++; if (o !== p && v > me) r++; } return { r, n, v: me }; };
+    // (the minimum at that date the same way: a third of the most rounds anyone had played in that season by then)
+    const stdRankAt = (p, y, t) => { const at = P.map((o) => { const s0 = o.sy.get(y); const i = s0 ? ub(s0.ds, t) : 0; return [o, i, i ? s0.cum[i] / i : null]; }), mn = minRule(Math.max(0, ...at.map((x) => x[1])));
+      const meA = at.find((x) => x[0] === p); if (!meA || meA[1] < mn) return null; let r = 1, n = 0; for (const [o, i, v] of at) { if (i < mn) continue; n++; if (o !== p && v > meA[2]) r++; } return { r, n, v: meA[2] }; };
     const out = { P, years, season, lastY, lastDate, rows, rankAt, stdRankAt, hasOw: rows.some((r) => r.ow != null) }; memo.set(T, out); return out;
   }
 
@@ -83,7 +88,7 @@ export async function scoutTab(box, key0, name0) {
     const minSel = el("select", { class: "ip-sel", "aria-label": "Seasons ranked" }, [1, 2, 3].map((n) => el("option", { value: String(n), ...(n === minSeasons ? { selected: true } : {}) }, n === 1 ? "Any players" : `${n}+ seasons ranked`)));
     minSel.addEventListener("change", () => { minSeasons = Number(minSel.value); drawBoard(); });
     const detail = el("div", { class: "sc-detail" }), boardBox = el("div", {});
-    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim(), el("span", { class: "sc-ver", title: "The version of this page" }, " · v903")]), el("h2", { class: "ip-h" }, "Scouting"),
+    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim(), el("span", { class: "sc-ver", title: "The version of this page" }, " · v904")]), el("h2", { class: "ip-h" }, "Scouting"),
       el("p", { class: "muted" }, "How good is a player, is he getting better, and where is he likely to finish next season? Pick a player below for a plain-English report.")])),
       // (update 903) how to read it, in three lines
       el("div", { class: "sc-how" }, [el("strong", {}, "How to read this page"), el("ul", {}, [
@@ -144,7 +149,7 @@ export async function scoutTab(box, key0, name0) {
       const seq = yrPts.map((x) => `${ord(x.o.rank)}${x.y === lastY ? ` (${x.y} so far)` : ` (${x.y})`}`).join(" → ");
       const best = pts.filter((x) => x.rr).sort((a, b) => a.rr.r - b.rr.r)[0];
       const bullets = [
-        yrPts.length ? `Year-end rank: ${seq}` : `Not ranked in a season yet (needs ${DEF.MIN.seasonRounds}+ rounds in one)`,
+        yrPts.length ? `Year-end rank: ${seq}` : `Not ranked in a season yet (needs enough rounds in one: ${MINTXT})`,
         r.streak >= 2 ? `Improved ${r.streak} seasons in a row` : r.streak <= -2 ? `Slipped ${-r.streak} seasons in a row` : r.streak === 1 ? "Improved on the season before" : r.streak === -1 ? "Slipped from the season before" : null,
         r.now ? `Last ${ROLL} rounds: ${ord(r.now.r)} of ${r.now.n} (${sg2(r.now.v)} per round)${r.ago ? `; a year ago ${ord(r.ago.r)} (${r.trend > 0 ? `up ${r.trend}` : r.trend < 0 ? `down ${-r.trend}` : "the same"})` : ""}` : `Fewer than ${ROLL} rounds in the past year: no rolling rank now`,
         best ? `Best rolling rank: ${ord(best.rr.r)} (${fmtD(best.t)})` : null,
@@ -161,12 +166,12 @@ export async function scoutTab(box, key0, name0) {
           return el("div", { class: "sc-sea" }, [el("div", { class: "sc-pc-top" }, [el("strong", {}, `${x.y}${x.y === lastY ? " so far" : ""}`), el("span", {}, [el("b", {}, ord(x.o.rank)), d ? el("small", { class: d > 0 ? "pos" : "neg" }, ` ${d > 0 ? "▲" : "▼"}${Math.abs(d)}`) : null, el("span", { class: "muted small" }, ` · ${sg2(x.o.sg)} · ${x.o.n} rds`)])]),
             el("div", { class: "sc-sea-cats" }, PI.CATS.map((c) => el("span", {}, [el("small", { class: "muted" }, { OTT: "Tee", APP: "Approach", ARG: "Short game", PUTT: "Putting" }[c]), el("b", {}, sg2(x.o.cat[c])), el("small", { class: "muted" }, ord(x.o.cr[c]))])))]); }))
         : segs.length ? el("div", { class: "ip-tw" }, el("table", { class: "ip-t sc-seasons" }, [el("thead", {}, el("tr", {}, ["Season", "Rounds", "SG per round", "Rank", ...PI.CATS.map((c) => PI.CATN[c]), B.hasOw ? "OWGR" : null].filter(Boolean).map((h, i) => el("th", { class: i ? "num" : null }, h)))), el("tbody", {}, segs)])) : null,
-        samp(`Strokes gained per round on the ${tour || "tour"}, with the rank among that season's players with ${DEF.MIN.seasonRounds}+ rounds in each part of the game: which parts moved ${last}'s rank. The chart (higher is better): each season's rank so far after each event, ending on its year-end rank; faint behind it, the rank over the last ${ROLL} rounds (form, across seasons)${B.hasOw ? "; the OWGR dashed" : ""}.`)])]);
+        samp(`Strokes gained per round on the ${tour || "tour"}, with the rank among that season's players with ${MINTXT} in each part of the game: which parts moved ${last}'s rank. The chart (higher is better): each season's rank so far after each event, ending on its year-end rank; faint behind it, the rank over the last ${ROLL} rounds (form, across seasons)${B.hasOw ? "; the OWGR dashed" : ""}.`)])]);
     }
     // (update 903) the plain-English report: how good, which way, where next season, and the green and red flags (with why)
     function verdictCard(r) {
       const sc = M.scout(r.k), last = lastName(r.nm);
-      if (!sc) return card(`${r.nm}`, "#ffcc00", el("p", {}, `Not enough rounds yet for a report: a player needs ${DEF.MIN.seasonRounds}+ rounds in a season on the ${tour || "tour"} to be ranked.`));
+      if (!sc) return card(`${r.nm}`, "#ffcc00", el("p", {}, `Not enough rounds yet for a report: a player needs ${MINTXT} in a season on the ${tour || "tour"} to be ranked.`));
       const cur = sc.cur, G = sc.grades, of = cur.of, rk = cur.rank, so = cur.partial ? " this season so far" : ` in ${cur.y}`;
       const level = rk <= 10 ? "an elite, top-10 player" : rk <= 25 ? "a top-25 player" : rk <= 50 ? "a top-50 player" : rk <= of / 2 ? "an above-average tour player" : "a below-average tour player";
       const ch = r.now && r.ago ? r.ago.r - r.now.r : null, big = (a) => Math.max(5, Math.round(0.15 * a));
@@ -203,11 +208,11 @@ export async function scoutTab(box, key0, name0) {
           t10 != null ? tile("Chance of a top-10 season", `${Math.round(t10 * 100)}%`, oneIn(t10)) : null]),
         flags.length ? el("div", { class: "sc-flags" }, [el("p", { class: "ip-kick" }, "What stands out"), el("ul", {}, flags.map(([k, t, why]) => el("li", { class: `sc-flag f-${k}` }, [el("span", { class: "sc-fi", "aria-hidden": "true" }, k === "g" ? "✓" : k === "r" ? "!" : "?"), el("span", {}, [el("b", {}, t), el("small", {}, why)])])))]) : null,
         comp8.length ? el("p", { class: "sc-likes" }, [el("b", {}, "Players with seasons most like his: "), comp8.slice(0, 3).map((c) => `${c.x.nm} (${c.x.y}: ${ord(c.x.rank)}, then ${ord(c.x.next.rank)}${c.x.next.partial ? " so far" : ""})`).join(", "), `. Of the ${comp8.length} most similar, ${up8} improved the next season.`]) : null,
-        el("p", { class: "muted small" }, `"Likely" range: where he finishes about 8 seasons in 10. Ranks are by strokes gained per round among the ${tour || "tour"}'s players with ${DEF.MIN.seasonRounds}+ rounds.`)]);
+        el("p", { class: "muted small" }, `"Likely" range: where he finishes about 8 seasons in 10. Ranks are by strokes gained per round among the ${tour || "tour"}'s players with ${MINTXT}.`)]);
     }
     // (update 890) the scouting report: grades, the projection and tier odds, comps, and the paths successful players took
     function reportCard(r) {
-      const sc = M.scout(r.k); if (!sc) return card(`${r.nm} · scouting report`, "#ffcc00", el("p", { class: "muted" }, `Not ranked in a season yet (needs ${DEF.MIN.seasonRounds}+ rounds in one): no report.`));
+      const sc = M.scout(r.k); if (!sc) return card(`${r.nm} · scouting report`, "#ffcc00", el("p", { class: "muted" }, `Not ranked in a season yet (needs enough rounds in one: ${MINTXT}): no report.`));
       const G = sc.grades, cur = sc.cur, gBox = (label, g, sub) => el("div", { class: "sc-gbox" }, [el("span", { class: "sc-gl" }, label), gEl(g), sub ? el("small", { class: "muted" }, sub) : null]);
       const odds = M.tiers.map((t) => { const o = sc.odds[t]; if (!o || o.p == null) return null; return el("div", { class: "sc-odd", title: `Comps: ${pc(o.cohort)} · projection: ${pc(o.model)}` }, [el("span", { class: "sc-ol" }, `Top ${t}`), el("div", { class: "sc-ob" }, el("i", { style: `width:${Math.max(1, Math.round(o.p * 100))}%` })), el("b", {}, pc(o.p))]); });
       const nx = (x) => (x.next ? `${ord(x.next.rank)}${x.next.partial ? " so far" : ""} (${sg2(x.next.sg)})` : "—");
