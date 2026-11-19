@@ -1230,11 +1230,8 @@ th.bs-lastn .peak-len { top: 0 !important; margin: 0 !important; }
 .td-skill .td-sk-hd .td-sk-d { white-space: nowrap; font: 700 0.62rem var(--td-sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--td-soft); }
 .td-skill .td-sk-note { margin: 2px 0 6px; font: 0.72rem var(--td-sans); color: var(--td-soft); }
 @media (max-width: 560px) { .td-skill .td-sk-row { grid-template-columns: 5.6em minmax(0, 1fr) 3.4em; gap: 6px; } }
-/* (update 886) skill charts: green gaining, red losing; the other bar faded, the top 10 solid; the gaps shaded by size */
-.td-skill .td-sk-bar i.pos { background: var(--td-up, #30d158) !important; } .td-skill .td-sk-bar i.neg { background: var(--td-down, #ff453a) !important; }
-.td-skill .td-sk-bar.me i { opacity: 0.45; }
+/* (update 886) the skill charts' gaps shaded by size */
 .td-skill .td-sk-dv { display: inline-block; padding: 1px 5px; border-radius: 4px; color: var(--td-ink); font-weight: 700; }
-.td-sk-lg span::before { content: ""; display: inline-block; width: 18px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
-.td-sk-lg .lg-me::before { background: linear-gradient(90deg, var(--td-down, #ff453a) 50%, var(--td-up, #30d158) 50%); opacity: 0.45; }
-.td-sk-lg .lg-top::before { background: linear-gradient(90deg, var(--td-down, #ff453a) 50%, var(--td-up, #30d158) 50%); }
-.td-sk-lg .lg-sign::before { display: none; } .td-sk-lg .lg-sign { color: var(--td-soft); }
+/* (update 887) Talking Points (shots you'll face, aggressiveness): green above usual, red below */
+.td-att .td-sk-bar i.pos, .td-agg .td-sk-bar i.pos { background: var(--td-up, #30d158) !important; }
+.td-att .td-sk-bar i.neg, .td-agg .td-sk-bar i.neg { background: var(--td-down, #ff453a) !important; }
