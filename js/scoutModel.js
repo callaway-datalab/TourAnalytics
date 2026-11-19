@@ -11,7 +11,7 @@
 //      fitted on every past season-to-season pair in the file, with the spread of what actually happened around it; the odds
 //      are the chance that spread puts the player above each tier's usual strokes-gained line.
 //    The cohort counts for more when its comps are close and many (up to half).
-//  • Grades on the 20-80 scouting scale (baseball's): 50 a typical tour player-season, every 10 one standard deviation.
+//  • Ratings 0-100 (update 899): the percentile, the share of the tour's ranked players the number beats (50 the middle player, 99 the best).
 //    Now: this season, shrunk by its rounds. Ceiling: the projection's 80th percentile (a good outcome, not a dream).
 //    Tool grades for each part of the game, the same way.
 //  • Fast risers: the rolling 24-round strokes gained now against a year ago; "clear" when the rise is bigger than the
@@ -25,7 +25,8 @@ const W = { sg: 3, OTT: 1, APP: 1, ARG: 1, PUTT: 1, d: 1.2, age: 1.5, yrs: 0.6, 
 const Phi = (z) => { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2), p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - p : p; };
 const mean = (xs) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : 0);
 const sd = (xs) => { const m = mean(xs); return Math.sqrt(xs.reduce((t, x) => t + (x - m) ** 2, 0) / Math.max(1, xs.length - 1)) || 1; };
-export const grade = (z) => Math.max(20, Math.min(80, Math.round((50 + 10 * z) / 5) * 5));
+export const grade = (z) => Math.max(20, Math.min(80, Math.round((50 + 10 * z) / 5) * 5)); // (the old 20-80 scale; no longer used)
+export const rating = (p) => Math.max(1, Math.min(99, Math.round(p * 100))); // (update 899) 0-100: the percentile
 
 /** B: the Scouting page's build for a tour ({ P, years, season, rows, lastY }) */
 export function scoutModel(B) {
@@ -67,7 +68,7 @@ export function scoutModel(B) {
   // the top 16%, 70 the top 2%, 80 the very top), so a grade and a rank always agree
   const refY = full.at(-1) || lastY, ref = [...season[refY].by.values()], refOf = { sg: ref.map((o) => o.sg).sort((a, b) => a - b), ...Object.fromEntries(CATS.map((c) => [c, ref.map((o) => o.cat[c]).sort((a, b) => a - b)])) };
   const pctOf = (v, k) => { const a = refOf[k]; if (!a.length) return 0.5; let lo = 0; while (lo < a.length && a[lo] < v) lo++; let hi = lo; while (hi < a.length && a[hi] === v) hi++; return Math.min(0.995, Math.max(0.005, (lo + (hi - lo) / 2) / a.length)); };
-  const gradeOf = (v, k) => grade(invPhi(pctOf(v, k)));
+  const gradeOf = (v, k) => rating(pctOf(v, k)); // (update 899: 0-100, the percentile; was the 20-80 scale)
   const rankLike = (v, k = "sg") => Math.max(1, Math.round((1 - pctOf(v, k)) * refOf[k].length) + 1); // (the rank that number would have had in the latest full season)
   const memo = new Map();
   function scout(k) {
