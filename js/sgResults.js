@@ -94,16 +94,21 @@ export function resultsView(S, rounds, field) {
   const inYr = evs.filter((e) => st.resYear === "all" || e.year === st.resYear), who = me?.label || "", whoL = String(who).replace(/\s*\([^)]*\)\s*$/, "").trim().split(/\s+/).slice(-1)[0] || "His";
   const sumBox = el("div", { class: "tr-sum" }, el("p", { class: "muted small" }, "Loading the season…"));
   const listBox = el("div", { class: "tr-list" });
+  // (update 919) opening a tournament takes you down to it, clear of the top bar; again once its first box has loaded, if that moved it
+  const toDetail = () => { const go1 = () => { const n = document.querySelector(".tr-heroes"); if (!n) return; const bar = Math.max(0, document.querySelector(".rail")?.getBoundingClientRect().bottom || 0); window.scrollTo({ top: Math.max(0, n.getBoundingClientRect().top + window.scrollY - bar - 12), behavior: "smooth" }); };
+    let moved = false; const mv = () => { moved = true; }; addEventListener("wheel", mv, { once: true, passive: true }); addEventListener("touchmove", mv, { once: true, passive: true });
+    setTimeout(go1, 120); setTimeout(() => { removeEventListener("wheel", mv); removeEventListener("touchmove", mv); if (moved) return; const n = document.querySelector(".tr-heroes"); if (n && Math.abs(n.getBoundingClientRect().top - Math.max(0, document.querySelector(".rail")?.getBoundingClientRect().bottom || 0) - 12) > 40) go1(); }, 1500); };
   const sgRd = (e) => avg(e.rs.filter((r) => !r.eventLevel), tot);
   const drawList = (fin = new Map()) => { const pos = (e) => fin.get(e.key);
-    mount(listBox, el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t tr-evs" }, [el("thead", {}, el("tr", {}, ["Date", "Tournament", "Finish", "To par", "Rounds", "SG per round"].map((h, i) => el("th", { class: i >= 2 ? "num" : "" }, h)))),
+    mount(listBox, [el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t tr-evs" }, [el("thead", {}, el("tr", {}, ["Date", "Tournament", "Finish", "To par", "Rounds", "SG per round"].map((h, i) => el("th", { class: i >= 2 ? "num" : "" }, h)))),
       el("tbody", {}, inYr.map((e) => { const o = pos(e), open = st.resOpen && st.resKey === e.key, v = sgRd(e);
         const tr = el("tr", { class: `tr-ev${open ? " on" : ""}`, tabindex: "0", title: open ? "Close" : "Open this tournament" }, [el("td", { class: "muted" }, new Date(`${String(e.rs[0]?.date || e.end).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) })),
           el("td", {}, [open ? "\u25BE " : "\u25B8 ", e.event]), el("td", { class: `num strong ${o?.pos === "1" ? "pos" : /^(CUT|MC|WD|DQ)$/i.test(o?.pos || "") ? "neg" : ""}` }, o?.pos ? (/^\d+$/.test(o.pos) ? ord(Number(o.pos)) : o.pos) : "—"),
           el("td", { class: "num" }, o?.total == null ? "—" : Number(o.total) === 0 ? "E" : Number(o.total) > 0 ? `+${o.total}` : String(o.total).replace("-", "\u2212")),
           el("td", { class: "num" }, String(new Set(e.rs.map((r) => r.roundNo)).size)), el("td", { class: `num ${cls(v)}` }, v == null ? "—" : fmtSG(v))]);
-        const go = () => { if (open) { st.resOpen = false; } else { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; } S.draw(); if (!open) requestAnimationFrame(() => document.querySelector(".tr-heroes")?.scrollIntoView({ behavior: "smooth", block: "start" })); };
-        tr.addEventListener("click", go); tr.addEventListener("keydown", (k) => { if (k.key === "Enter") go(); }); return tr; }))]))); };
+        const go = () => { if (open) { st.resOpen = false; } else { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; } S.draw(); if (!open) toDetail(); };
+        tr.addEventListener("click", go); tr.addEventListener("keydown", (k) => { if (k.key === "Enter") go(); }); return tr; }))])),
+      fin.size && inYr.some((e) => !fin.get(e.key)?.pos) ? el("p", { class: "muted small" }, "— : no official result saved for that tournament (the live feed has no leaderboard for it, as with some majors)") : null]); };
   drawList();
   // the cards: events, cuts, wins, top 10s, average finish; and from the scorecards, contention and clutch
   (async () => {

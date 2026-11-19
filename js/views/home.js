@@ -283,6 +283,9 @@ export async function render(main, { previewClient } = {}) {
     const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const c = heat?.find((h) => (h.events || []).some((e) => norm(e.name) === norm(on.name)) || (on.course && norm(h.name) === norm(on.course)));
     next = { name: on.name, heat: c?.id || null, live: !!live, start: on.start };
+    // (update 919) Course Strategy defaults to this week's tournament (a pick from Change event lasts only for the week it was made)
+    if (c) { let keep = false; try { const v = JSON.parse(localStorage.getItem("ta.homeEvent") || "null"); keep = !!v?.name && v.week === on.name; if (!keep) localStorage.removeItem("ta.homeEvent"); } catch { /* */ }
+      if (!keep) UPCOMING = { ...mkUP(on.name, c.name), start: on.start, live: !!live }; }
   }).catch(() => {});
 
   // ---- the players: whose highlights (a player: their own; a coach / caddy / analyst: their players, the Watchlist's
@@ -304,32 +307,38 @@ export async function render(main, { previewClient } = {}) {
   const escRe = (t) => String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), evCore = (n) => String(n || "").replace(/^the\s+/i, "").replace(/\s+(presented|powered|hosted|sponsored)\s+by\b.*$/i, "").trim();
   const mkUP = (name, course) => ({ name, re: new RegExp(escRe(evCore(name)), "i"), course: course ? new RegExp(escRe(course), "i") : /(?!)/, not: /(?!)/ });
   const UP0 = { name: "The American Express", re: /american express|amex\b/i, course: /pete dye stadium|pga west|la quinta/i, not: /sawgrass|tpc/i }; /* (update 737: the Pete Dye Stadium Course at PGA West) */ /* (update 736) */
-  let UPCOMING = (() => { try { const v = JSON.parse(localStorage.getItem("ta.homeEvent") || "null"); return v?.name ? mkUP(v.name, v.course) : UP0; } catch { return UP0; } })();
+  let UPCOMING = (() => { try { const v = JSON.parse(localStorage.getItem("ta.homeEvent") || "null"); return v?.name ? { ...mkUP(v.name, v.course), start: v.start || null } : UP0; } catch { return UP0; } })();
+  // (update 919) the line under Course Strategy: the tournament and its start date (looked up on the schedule when not known)
+  const upSub = () => { const U = UPCOMING, d = U.start ? new Date(`${String(U.start).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "";
+    if (!U.start && !U.looked) { U.looked = true; import("../playerInsights.js").then((PI) => PI.upcomingFor(tourPick && tourPick !== ALL ? tourPick : "PGA")).then(({ list }) => { const e = list.find((x) => U.re.test(String(x.name || ""))); if (e?.start && UPCOMING === U) { U.start = e.start; document.querySelectorAll("[data-sec=course] > .td-sh > span").forEach((x) => { x.textContent = upSub(); }); } }).catch(() => {}); }
+    return U.live ? `On now: ${U.name}${d ? ` · started ${d}` : ""}` : `Up next: ${U.name}${d ? ` · starts ${d}` : ""}`; };
   // the pick: every tournament with a course in Strategy Maps, in the schedule's order (the next ones first)
   async function changeEvent() {
     await heatP; const { popup } = await import("./insightPages.js"), PI = await import("../playerInsights.js");
     const evs = new Map(); for (const h of heat || []) for (const e of h.events || []) if (e?.name && !evs.has(evCore(e.name).toLowerCase())) evs.set(evCore(e.name).toLowerCase(), { name: e.name, course: h.name, shots: !!h.rawChunks });
     const names = [...evs.values()].map((e) => e.name), SO = await PI.scheduleOrder(names, tourPick && tourPick !== ALL ? tourPick : "PGA").catch(() => ({ on: names.map((n) => ({ name: n })), off: [] }));
-    const up = (await PI.upcomingFor(tourPick && tourPick !== ALL ? tourPick : "PGA").catch(() => ({ list: [] }))).list.map((e) => PI.matchEventName(e.name, names)).filter(Boolean);
+    const upL = (await PI.upcomingFor(tourPick && tourPick !== ALL ? tourPick : "PGA").catch(() => ({ list: [] }))).list, up = upL.map((e) => PI.matchEventName(e.name, names)).filter(Boolean);
+    const startOf = (n) => upL.find((e) => PI.matchEventName(e.name, [n]) === n)?.start || null;
     const fmt = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: "short" }) : "");
     const byN = (n) => [...evs.values()].find((e) => e.name === n);
     let close = null;
     const row = (n, sub) => { const e = byN(n), b = el("button", { type: "button", class: `ip-evrow${n === UPCOMING.name ? " on" : ""}` }, [el("b", {}, n), el("span", {}, [e?.course || "", sub ? ` · ${sub}` : "", e?.shots ? "" : " · holes only"].join(""))]);
-      b.addEventListener("click", () => { pickEvent(e); close?.(); }); return b; };
-    const reset = el("button", { type: "button", class: "ip-evrow" }, [el("b", {}, "Back to the default"), el("span", {}, UP0.name)]); reset.addEventListener("click", () => { pickEvent(null); close?.(); });
+      b.addEventListener("click", () => { pickEvent(e && { ...e, start: startOf(n) }); close?.(); }); return b; };
+    const reset = el("button", { type: "button", class: "ip-evrow" }, [el("b", {}, "Back to the default"), el("span", {}, next?.heat ? `${next.name} (${next.live ? "this week" : "up next"})` : UP0.name)]); reset.addEventListener("click", () => { pickEvent(null); close?.(); });
     close = popup("Course Strategy for…", [up.length ? el("p", { class: "cf-sub" }, "Coming up on the schedule") : null, up.length ? el("div", { class: "ip-evlist" }, [...new Set(up)].slice(0, 8).map((n) => row(n, "next"))) : null,
       el("p", { class: "cf-sub" }, "Every tournament with its course in Strategy Maps, in schedule order"), el("div", { class: "ip-evlist" }, [...SO.on.map((o) => row(o.name, fmt(o.start))), ...SO.off.map((n) => row(n, ""))]),
       el("div", { class: "ip-evlist" }, [reset])], "Change event");
   }
   function pickEvent(e) {
-    try { if (e) localStorage.setItem("ta.homeEvent", JSON.stringify({ name: e.name, course: e.course })); else localStorage.removeItem("ta.homeEvent"); } catch { /* */ }
-    UPCOMING = e ? mkUP(e.name, e.course) : UP0; upHoles = null; upRaw = null; factMemo = null;
+    try { if (e) localStorage.setItem("ta.homeEvent", JSON.stringify({ name: e.name, course: e.course, start: e.start || null, week: next?.name || null })); else localStorage.removeItem("ta.homeEvent"); } catch { /* */ }
+    const hc = !e && next?.heat ? heat?.find((h) => h.id === next.heat) : null; /* (update 919: back to the default = this week's) */
+    UPCOMING = e ? { ...mkUP(e.name, e.course), start: e.start || null } : hc ? { ...mkUP(next.name, hc.name), start: next.start, live: next.live } : UP0; upHoles = null; upRaw = null; factMemo = null;
     if (lastItems) drawFeed(collect()); loadUpCourse().catch(() => {});
     requestAnimationFrame(() => document.getElementById("td-course")?.scrollIntoView({ block: "start", behavior: "smooth" }));
   }
   // ---- (update 731) the newspaper ----
   const SEC = { res: ["Results & Milestones", "The week’s best and worst"], form: ["Form", "The last 12 rounds against the 12 before"], gear: ["Equipment", "New in the bag"],
-    rank: ["Ranks", "Where they stand on tour"], fact: ["Did You Know?", ""], bestwk: ["Best Week", "Their best weeks of the season: overall, each part of the game, each distance"], spot: ["Player Spotlight", "Strengths, steadiness and what drives the good weeks"], focus: ["Where to Improve", "The biggest leak, and the fix"], next: ["This Week", ""], prac: ["Practice", "On the range"], tour: ["Around the Tour", "Briefs"], course: ["Course Strategy", `Up next: ${UPCOMING.name}`] };
+    rank: ["Ranks", "Where they stand on tour"], fact: ["Did You Know?", ""], bestwk: ["Best Week", "Their best weeks of the season: overall, each part of the game, each distance"], spot: ["Player Spotlight", "Strengths, steadiness and what drives the good weeks"], focus: ["Where to Improve", "The biggest leak, and the fix"], next: ["This Week", ""], prac: ["Practice", "On the range"], tour: ["Around the Tour", "Briefs"], course: ["Course Strategy", upSub()] };
   const SEC_OF = { Result: "res", Milestone: "res", Trend: "form", Slide: "form", Rank: "rank", Equipment: "gear", Focus: "focus", "Next event": "next", Practice: "prac", Tour: "tour", Course: "course", Spotlight: "spot", Fact: "fact", "Best week": "bestwk" };
   // (update 780) Player Spotlight beside Where to Improve, then Equipment, Rankings and Results & Milestones as a row of three
   const ORDER = ROLE === "caddy" ? ["next", "course", "fact", "spot", "focus", "res", "prac", "tour"] : ["fact", "spot", "focus", "res", "next", "course", "prac", "tour"]; // (update 839: no Form or Equipment sections)
@@ -937,7 +946,7 @@ export async function render(main, { previewClient } = {}) {
     const crs = sorted.filter((h) => SEC_OF[h.kind] === "course" && !h.k && cgOf(h) !== "player"), trs = sorted.filter((h) => SEC_OF[h.kind] === "tour");
     const sec = (id, title, sub, content, extra = null) => el("section", { class: "td-sec full", id: `td-${id}`, "data-sec": id }, [el("div", { class: "td-sh" }, [el("h2", {}, title), extra, sub ? el("span", {}, sub) : null]), content]);
     const chg = (() => { const b = el("button", { type: "button", class: "td-shuf td-chg" }, "Change event"); b.addEventListener("click", () => changeEvent().catch((e) => console.warn(e))); return b; })();
-    const secs = [freshPlayers(), crs.length ? sec("course", "Next Event Course Strategy", `Up next: ${UPCOMING.name}`, courseGroups(crs), chg) : null, trs.length ? sec("tour", "Around the Tour", "Briefs", tourGroups(trs)) : null].filter(Boolean);
+    const secs = [freshPlayers(), crs.length ? sec("course", "Next Event Course Strategy", upSub(), courseGroups(crs), chg) : null, trs.length ? sec("tour", "Around the Tour", "Briefs", tourGroups(trs)) : null].filter(Boolean);
     mount(feed, [ownKey && ownAll.length ? myGame() : null, el("div", { class: "td-grid" }, secs)]);
     const go2 = (id) => document.getElementById(`td-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     mount(secNav, secs.map((x) => { const id = x.dataset.sec, a2 = el("a", { href: "#", "data-sec": id }, x.querySelector("h2")?.textContent || id); a2.addEventListener("click", (e) => { e.preventDefault(); go2(id); }); return a2; }));
@@ -1044,7 +1053,7 @@ export async function render(main, { previewClient } = {}) {
       for (const h of mine) { if (pick.length >= cap) break; const n = byK.get(h.k || "") || 0; if (many && h.k && n >= 2) continue; pick.push(h); byK.set(h.k || "", n + 1); }
       for (const h of mine) { if (pick.length >= cap) break; if (!pick.includes(h)) pick.push(h); }
       const [title, sub0] = SEC[id], chg = id === "course" ? (() => { const b = el("button", { type: "button", class: "td-shuf td-chg" }, "Change event"); b.addEventListener("click", () => changeEvent().catch((e) => console.warn(e))); return b; })() : null; /* (update 848) */
-      const sub = id === "course" ? `Up next: ${UPCOMING.name}` : id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
+      const sub = id === "course" ? upSub() : id === "rank" ? `${pick[0].x?.yr || ""} · ${tourPick && tourPick !== ALL ? tourName(tourPick) : "every tour"}${pick[0].x?.hits?.[0]?.n ? ` · ${pick[0].x.hits[0].n} players with enough rounds` : ""}` : id === "next" ? next?.name || "" : sub0;
       const content = id === "gear" ? el("div", { class: "td-gear2" }, pick.map(gearStory)) : id === "rank" ? rankBox(pick) : id === "fact" || id === "bestwk" ? el("div", { class: "td-fxs" }, pick.map(factCard)) : id === "tour" ? tourGroups(mine, grpShown) : id === "course" ? courseGroups(mine, grpShown) : el("div", { class: "td-cols" }, pick.map(column));
       const shuf = (() => { const b = el("button", { type: "button", class: "td-shuf", title: "Show other stories", "aria-label": `Shuffle ${title}` }, "↻ Shuffle"); /* (update 801: every section) */
         b.addEventListener("click", () => { if (id === "fact") { factShuf++; factMemo = null; } else secShuf[sk] = (secShuf[sk] || 0) + 1; drawFeed(collect()); requestAnimationFrame(() => document.getElementById(`td-${sk}`)?.scrollIntoView({ block: "nearest" })); }); return b; })();
@@ -1434,7 +1443,7 @@ export async function render(main, { previewClient } = {}) {
     const out = []; formAll.clear(); // (update 845: a player's form on the tour picked only)
     for (const k of shownKeys()) out.push(...highlightsFor(k));
     // this week's tournament, with its strategy maps (caddies first)
-    if (next?.heat) out.push({ id: "next", k: null, kind: "Next event", score: ROLE === "caddy" ? 9 : 5.5, title: `${next.live ? "On now" : "Coming up"}: ${next.name}`, detail: "Cal’s targets for every hole: where to aim off the tee and where to miss the green", to: "Course Prep · Strategy Maps", run: () => toHole(next.heat, 1, EX.course(`How should I play ${next.name}?`)) });
+    if (false && next?.heat) out.push({ id: "next", k: null, /* (update 919: no This Week section; its tournament is Course Strategy's) */ kind: "Next event", score: ROLE === "caddy" ? 9 : 5.5, title: `${next.live ? "On now" : "Coming up"}: ${next.name}`, detail: "Cal’s targets for every hole: where to aim off the tee and where to miss the green", to: "Course Prep · Strategy Maps", run: () => toHole(next.heat, 1, EX.course(`How should I play ${next.name}?`)) });
     // the tour (analysts and the admin): the biggest movers over the last 12 rounds
     if (!picked.size) { /* (update 736: everyone, not just analysts and the admin) */
       // (update 734) as Stats' Hot & Cold: Form (the last 12 rounds against the 12 before; the DP World Tour 3 events
