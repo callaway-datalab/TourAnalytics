@@ -1329,3 +1329,9 @@ html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; colo
   .sc .sc-parts { display: flex; overflow-x: auto; flex-wrap: nowrap; } .sc .sc-parts .ip-pill { flex: none; }
 }
 .sc .sc-pc-top small, .sc .sc-pc-yrs small, .sc .sc-pc-chips small, .sc .sc-pc-g small { display: inline !important; }
+/* (update 901) the career chart: season-to-date line (ends on the year-end rank), the form line faint behind */
+.sc .sc-std { fill: none; stroke: #4da3ff; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; } .sc .sc-stdd { fill: #4da3ff; }
+.sc .sc-roll2 { fill: none; stroke: rgba(160,160,170,0.55); stroke-width: 1.5; stroke-dasharray: 2 3; }
+.sc .sc-svg { margin: 0 auto; } .sc .sc-yrl { font-size: 12px; }
+.sc .sc-lg .sc-lg-std::before { background: #4da3ff; } .sc .sc-lg .sc-lg-roll2::before { background: rgba(160,160,170,0.7); }
+.sc .sc-ver { opacity: 0.55; font-weight: 400; letter-spacing: 0; text-transform: none; }
