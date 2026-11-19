@@ -128,12 +128,13 @@ export async function scoutTab(box, key0, name0) {
   const pgaEq = (T, rank, nOf) => { const br = bridge(T); return br ? br.eq(rank, nOf) : null; };
   // (update 916) clutch: from every saved scorecard (PGA Tour and Korn Ferry), by name to this page's players
   let CL = null; function ensureClutch() { if (CL) return CL; CL = { busy: true, byName: new Map(), list: [] };
-    Promise.all([import("../clutch.js"), PI.clutchEvents(["R", "H"], [Number(lastYAll) - 2, Number(lastYAll) - 1, Number(lastYAll)])]).then(([M0, evs]) => { const P0 = M0.clutchFrom(evs); CL.events = evs.length; CL.list = [...P0.values()]; for (const o of CL.list) CL.byName.set(PI.nameKey(o.name), o); CL.fmt = M0.clutchFmt; })
+    Promise.all([import("../clutch.js"), PI.clutchEvents(["R", "H"], [Number(lastYAll) - 2, Number(lastYAll) - 1, Number(lastYAll)])]).then(([M0, evs]) => { const P0 = M0.clutchFrom(evs); CL.events = evs.length; CL.diag = evs.diag; CL.list = [...P0.values()]; for (const o of CL.list) CL.byName.set(PI.nameKey(o.name), o); CL.fmt = M0.clutchFmt; })
       .catch((e) => { console.warn("clutch", e); CL.err = true; }).finally(() => { CL.busy = false; if (wrap.isConnected) draw(); });
     return CL; }
   const clutchOf = (nm) => ensureClutch().byName.get(PI.nameKey(nm)) || null;
   function pickKey(k) { sel = k; if (mainTour.get(k)) tour = mainTour.get(k); draw(); requestAnimationFrame(() => wrap.querySelector(".sc-detail")?.scrollIntoView({ behavior: "smooth", block: "start" })); }
   function draw() {
+    const y0 = window.scrollY; queueMicrotask(() => { if (Math.abs(window.scrollY - y0) > 2) window.scrollTo(0, y0); }); // (update 917: a tab, or a forecast arriving, never jumps the page)
     const B = build(tour), { years, lastY } = B, M = modelOf(tour), T1 = M.tiers[0], T2 = M.tiers[1];
     const pc = (v) => (v == null ? "—" : v < 0.005 ? "<1%" : v > 0.995 ? ">99%" : `${Math.round(v * 100)}%`);
     const gCls = (g) => (g >= 90 ? "g-hi" : g >= 70 ? "g-good" : g >= 35 ? "g-avg" : g >= 15 ? "g-low" : "g-poor"); // (update 899: 0-100)
@@ -338,7 +339,16 @@ export async function scoutTab(box, key0, name0) {
     function drawClutch() {
       const C0 = ensureClutch(), f = C0.fmt || ((v) => String(v));
       if (C0.busy) { mount(boardBox, card("Clutch", "#ff9f0a", el("p", { class: "muted ta-loading" }, "Reading every tournament's scorecards…"))); return; }
-      if (C0.err || !C0.list.length) { mount(boardBox, card("Clutch", "#ff9f0a", el("p", { class: "muted" }, "No scorecards yet: the live feed saves them from update 915 on (redeploy it and give it a few runs)."))); return; }
+      if (C0.err || !C0.list.length) { const D = C0.diag || { results: 0, withCards: 0, missing: 0, notes: [] }; // (update 917) say exactly what's there and what to do
+        mount(boardBox, card("Clutch", "#ff9f0a", [el("p", {}, "This needs every tournament's hole-by-hole scorecards, which the live-feed function saves (added in update 915). So far:"),
+          el("ul", { class: "ip-bul" }, [el("li", {}, `Tournaments with official results saved: ${D.results}`), el("li", {}, `With scorecards saved: ${D.withCards}`), el("li", {}, `Couldn't be read: ${D.notes.length}`)]),
+          D.results === 0 ? el("p", {}, "No official results are saved at all, so the live-feed function isn't saving anything for the portal yet. Check it's deployed and that its Cloud Scheduler job is enabled.")
+          : D.notes.length ? el("div", {}, [el("p", {}, "The scorecard API answered, but in a layout the reader doesn't recognise yet. Copy the text below and send it to me, and I'll fix the reader:"), el("pre", { class: "sc-note" }, JSON.stringify(D.notes[0].note, null, 1).slice(0, 3000))])
+          : el("div", {}, [el("p", {}, "No scorecards have been saved yet. Two things to check:"), el("ol", { class: "ip-bul" }, [
+              el("li", {}, ["Redeploy the live-feed function with update 915's ", el("b", {}, "pga.py"), " and ", el("b", {}, "build_data.py"), " (the files in backend/functions/live-feed). Until it's redeployed it keeps saving leaderboards only."]),
+              el("li", {}, "Then wait for it to run. Its Cloud Scheduler job runs every 30 minutes, Thursday to Monday; each run saves about 30 tournaments' scorecards, so two seasons fill in within about two hours of runs. To fill them now, open Cloud Scheduler and press Force run on the live-feed job a few times (a minute apart).")]),
+              el("p", { class: "muted small" }, "If this still says 0 after that, open the function's logs: a line starting \"cards\" shows what went wrong.")])]));
+        return; }
       const list = C0.list.filter((o) => o.contN >= 1 || o.leads >= 1);
       const val = (o) => (clSort === "clutch" ? -(o.clutch ?? -9) : clSort === "cont" ? -o.contN : clSort === "lead" ? -(o.leads ? o.leadWins / o.leads + o.leads / 100 : -1) : clSort === "behind" ? -o.winsBehind : clSort === "blown" ? -o.blown.length : clSort === "wins" ? -o.wins : o.name);
       list.sort((a, b) => { const x = val(a), y = val(b); return typeof x === "string" ? x.localeCompare(y) : x - y; });

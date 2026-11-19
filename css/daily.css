@@ -1364,3 +1364,4 @@ html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; colo
 /* (update 916) Clutch labels */
 .sc .sc-cl { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
 .sc .sc-cl-closer, .sc .sc-cl-riser { background: rgba(48,209,88,0.16); color: #30d158; } .sc .sc-cl-fader { background: rgba(255,69,58,0.16); color: #ff453a; } .sc .sc-cl-chaser { background: rgba(100,210,255,0.16); color: #64d2ff; }
+.sc .sc-note { white-space: pre-wrap; font-size: 0.72rem; max-height: 280px; overflow: auto; padding: 8px; border-radius: 8px; background: rgba(255,255,255,0.05); user-select: all; } /* (update 917) */
