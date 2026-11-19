@@ -137,7 +137,8 @@ export function renderChat(container, { flash }) {
   const STAFF_ROOM = "ca_staff"; // (update 164) the analysts' own chat
   // (update 177) whose Callaway Analyst chat it is: the uid in its id (staff can start one for a player)
   const ownerOf = (r) => (r.callaway && !r.staffRoom && String(r.id || "").startsWith("ca_") ? String(r.id).slice(3) : r.createdBy);
-  const roomName = (r) => (r.issue ? (r.createdBy === uid ? "Report an issue" : `${nameOf(r.createdBy)} \u00b7 Issue report`) : r.staffRoom ? "Callaway Analyst" : r.callaway ? (ownerOf(r) === uid ? "Callaway Analyst" : `${nameOf(ownerOf(r))} \u00b7 Callaway Analyst`) : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
+  const TOPIC_TAG = { issue: "Issue", question: "Question", feature: "Feature request" }; // (update 892)
+  const roomName = (r) => (r.callaway && r.topic && TOPIC_TAG[r.topic] && staff ? `${nameOf(ownerOf(r))} \u00b7 ${TOPIC_TAG[r.topic]}` : r.issue ? (r.createdBy === uid ? "Report an issue" : `${nameOf(r.createdBy)} \u00b7 Issue report`) : r.staffRoom ? "Callaway Analyst" : r.callaway ? (ownerOf(r) === uid ? "Callaway Analyst" : `${nameOf(ownerOf(r))} \u00b7 Callaway Analyst`) : r.type === "dm" ? nameOf(r.members.find((m) => m !== uid) || uid) : r.name || "Group");
   // in your Callaway Analyst chat, Callaway's replies show as "Callaway Analyst (Sam)"
   const first = (n) => String(n || "").trim().split(/\s+/)[0] || "";
   // (update 170) outside Callaway every analyst is "Callaway Analyst"; inside, staff see which of them wrote it
@@ -225,7 +226,13 @@ export function renderChat(container, { flash }) {
       b.addEventListener("click", () => startStaffRoom());
       const fold = el("button", { type: "button", class: "chat-ca-caret", "aria-expanded": caOpen ? "true" : "false", "aria-label": caOpen ? "Hide the players' conversations" : "Show the players' conversations", title: `${caRooms.length} conversation${caRooms.length === 1 ? "" : "s"} with players and teams` }, [caRooms.length ? String(caRooms.length) : "", caOpen ? " \u25B4" : " \u25BE"]);
       fold.addEventListener("click", (e) => { e.stopPropagation(); caOpen = !caOpen; drawList(); });
-      const sub = caOpen ? (caRooms.length ? caRooms.map((r) => { const li = item(r); li.classList.add("chat-ca-sub"); return li; }) : [el("li", { class: "chat-ca-sub chat-empty muted small" }, "No player has messaged Callaway Analyst yet.")]) : [];
+      // (update 892) in buckets: each kind of message in its own (Chat & support keeps them in separate conversations)
+      const BK = [["issue", "\u26A0 Issues"], ["question", "? Questions"], ["feature", "\u2726 Feature requests"], [null, "Earlier conversations"]];
+      const bucketOf = (r) => (["issue", "question", "feature"].includes(r.topic) ? r.topic : null);
+      const sub = !caOpen ? [] : !caRooms.length ? [el("li", { class: "chat-ca-sub chat-empty muted small" }, "No player has messaged Callaway Analyst yet.")]
+        : BK.flatMap(([k, label]) => { const xs = caRooms.filter((r) => bucketOf(r) === k).sort((a, b) => ms(b.lastAt) - ms(a.lastAt)); if (!xs.length) return [];
+          const n = xs.filter((r) => unread(r) && r.id !== current).length;
+          return [el("li", { class: `chat-ca-sub chat-bucket chat-bucket-${k || "old"}` }, [el("span", {}, label), el("span", { class: "muted small" }, ` ${xs.length}${n ? ` \u00b7 ${n} new` : ""}`)]), ...xs.map((r) => { const li = item(r); li.classList.add("chat-ca-sub"); return li; })]; });
       return [el("li", { class: "chat-ca-row" }, [b, fold]), ...sub];
     })() : [];
     const asks = incoming.map((r) => {

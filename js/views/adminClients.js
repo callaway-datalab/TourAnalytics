@@ -419,7 +419,7 @@ export async function render(main, { flash }) {
   const pcBox = el("input", { type: "checkbox", "aria-label": "Allow player chat" });
   const pcAfter = async (code) => { if (!code) return; const on = pcBox.checked; pcBox.checked = false; if (typeSel.value === "player") return;
     try { await setPlayerChatAccess(code, on); } catch { flash("Made the code, but couldn\u2019t set Player Chat for it. Set it on its row.", "error"); } };
-  const calAfter = async (code) => { await caAfter(code); await coachAfter(code); await pcAfter(code); if (!calBox.checked || !code) return; try { await setCalAccess(code, true); } catch { flash("Made the code, but couldn\u2019t turn Cal on for it. Republish the Firestore rules from update 281, then tick Cal on its row.", "error"); } calBox.checked = false; };
+  const calAfter = async (code) => { /* (update 892: no Analyst Chat / Player Chat boxes: chat & support is open to everyone, player chat keeps its default) */ await coachAfter(code); if (!calBox.checked || !code) return; try { await setCalAccess(code, true); } catch { flash("Made the code, but couldn\u2019t turn Cal on for it. Republish the Firestore rules from update 281, then tick Cal on its row.", "error"); } calBox.checked = false; };
   fakeBox.addEventListener("change", () => { createBtn.textContent = fakeBox.checked ? "Create fake user" : "Create code"; });
   async function makeFake(code, name) {
     const { createFakeUser } = await import("../fakeUsers.js");
@@ -485,8 +485,8 @@ export async function render(main, { flash }) {
     fieldsBox,
     // (update 170) a fake user: the code is used straight away by a test account you can act as
     el("label", { class: "fake-row cal-row" }, [calBox, el("span", {}, [el("strong", {}, "Enable Cal"), el("span", { class: "muted small fake-hint" }, "Let them ask Cal, the AI assistant (each question costs a little). You can change it later on their row.")])]),
-    el("label", { class: "fake-row cal-row" }, [caBox, el("span", {}, [el("strong", {}, "Allow messaging Callaway Analyst"), el("span", { class: "muted small fake-hint" }, "Let them start a chat with Callaway\u2019s analysts (and forward questions Cal can\u2019t answer). You can change it later on their row.")])]),
-    el("label", { class: "fake-row cal-row" }, [pcBox, el("span", {}, [el("strong", {}, "Allow player chat"), el("span", { class: "muted small fake-hint" }, "Let them message the players they have access to straight away. Without it they add a player as a friend first. (Not for players themselves.) You can change it later on their row.")])]),
+    /* (update 892: removed) */
+    /* (update 892: removed) */
     el("label", { class: "fake-row cal-row" }, [coachBox, el("span", {}, [el("strong", {}, "Allow coaching"), el("span", { class: "muted small fake-hint" }, "Let them send practice plans (drills and goals from Stats) to the players they work with. For coaches, caddies and players; most employees and analysts don\u2019t need it. You can change it later on their row.")])]),
     el("label", { class: "fake-row" }, [fakeBox, el("span", {}, [el("strong", {}, "Fake user"), el("span", { class: "muted small fake-hint" }, "Make a test account with this access now, and act as it (nobody else gets the code).")])]),
     el("div", {}, createBtn),
@@ -764,7 +764,7 @@ export async function render(main, { flash }) {
 
     if (!rows.length) { mount(invitesBox, el("p", { class: "empty" }, "No codes match.")); return; }
     mount(invitesBox, el("div", { class: "table-scroll five-rows codes-rows" }, el("table", { class: "plain" }, [
-      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Analyst Chat", "Player Chat", "Coaching", "Scouting", "Sign-ins", "Last sign-in", "Account created", ""].map((h) => el("th", {}, h)))), /* (update 849: Account created) */
+      el("thead", {}, el("tr", {}, ["Code", "Name", "Email", "User Type", "Team of", "Status", "Cal", "Coaching", "Scouting", "Sign-ins", "Last sign-in", "Account created", ""].map((h) => el("th", {}, h)))), /* (update 849: Account created) */
       el("tbody", {}, rows.flatMap(({ inv, user, grants, typeLabels, email, status, teamOf, teamOfMake }) => { const tr = el("tr", { class: "code-row" }, [
         el("td", {}, el("code", {}, formatCode(inv.code))),
         el("td", {}, [
@@ -775,7 +775,7 @@ export async function render(main, { flash }) {
         el("td", {}, el("span", { class: "type-tags" }, [...typeLabels.map(([cls, l]) => el("span", { class: `tag type-${cls}` }, l)), user && fakeMap.has(user.uid) ? el("span", { class: "tag type-fake", title: "A test account you made" }, "Fake") : null])),
         el("td", {}, teamOf),
         el("td", {}, status),
-        el("td", { class: "cal-cell" }, calToggle(inv, user)), el("td", { class: "cal-cell" }, caToggle(inv, user)), el("td", { class: "cal-cell" }, pcToggle(inv, user)), el("td", { class: "cal-cell" }, coachToggle(inv, user)), el("td", { class: "cal-cell" }, scoutToggle(inv, user)),
+        el("td", { class: "cal-cell" }, calToggle(inv, user)), el("td", { class: "cal-cell" }, coachToggle(inv, user)), el("td", { class: "cal-cell" }, scoutToggle(inv, user)),
         el("td", { class: "num" }, user ? num(signSince ? signSince.get(user.uid) || 0 : user.signInCount || 0) : el("span", { class: "muted" }, "\u2014")), /* (update 842: since the reset) */
         el("td", { class: "nowrap" }, user?.lastSignInAt ? formatWhen(user.lastSignInAt) : el("span", { class: "muted" }, user ? "Not yet" : "\u2014")),
         el("td", { class: "nowrap" }, (user?.createdAt || inv.usedAt) ? formatWhen(user?.createdAt || inv.usedAt) : el("span", { class: "muted" }, "\u2014")), /* (update 849) */
@@ -785,7 +785,7 @@ export async function render(main, { flash }) {
       const line = (k, v) => el("div", { class: "cd-line" }, [el("span", { class: "cd-k" }, k), el("span", { class: "cd-v" }, v)]);
       const more = el("tr", { class: "code-more", hidden: true }, el("td", { colspan: "11" }, el("div", { class: "cd-grid" }, [
         line("Code", el("code", {}, formatCode(inv.code))), line("Email", email || "\u2014"), line("Team of", teamOfMake()),
-        line("Cal", calToggle(inv, user)), line("Analyst chat", caToggle(inv, user)), line("Player chat", pcToggle(inv, user)), line("Coaching", coachToggle(inv, user)), line("Scouting", scoutToggle(inv, user)), line("Sign-ins", user ? num(user.signInCount || 0) : "\u2014"),
+        line("Cal", calToggle(inv, user)), line("Coaching", coachToggle(inv, user)), line("Scouting", scoutToggle(inv, user)), line("Sign-ins", user ? num(user.signInCount || 0) : "\u2014"),
         line("Last sign-in", user?.lastSignInAt ? formatWhen(user.lastSignInAt) : user ? "Not yet" : "\u2014"),
         line("Account created", (user?.createdAt || inv.usedAt) ? formatWhen(user?.createdAt || inv.usedAt) : "\u2014"), /* (update 849) */
         el("div", { class: "cd-actions" }, codeActions(inv, user, grants)),

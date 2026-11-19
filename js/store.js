@@ -1148,7 +1148,8 @@ export async function myCalAccess(inviteCode) {
   try { const s = await getDoc(doc(db, "calAccess", inviteCode)); return !!(s.exists() && s.data().on); } catch { return false; }
 }
 /** (update 305) Whether this signed-in person may message Callaway Analyst (yes unless the admin turned it off). */
-export async function myAnalystAccess(inviteCode) {
+export async function myAnalystAccess(inviteCode) { return true; /* (update 892) Chat & support is open to everyone */ }
+export async function myAnalystAccessOld(inviteCode) {
   if (!inviteCode) return true;
   try { const s = await getDoc(doc(db, "calAccess", inviteCode)); return !(s.exists() && s.data().analyst === false); } catch { return true; }
 }

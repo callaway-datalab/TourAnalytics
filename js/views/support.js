@@ -7,7 +7,6 @@ import { collection, addDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, orderBy
 import { db, adminUids } from "../firebase-init.js";
 import { el, mount, formatWhen } from "../ui.js";
 import { getState } from "../auth.js";
-import { myAnalystAccess } from "../store.js";
 
 const TOPICS = [
   { k: "issue", icon: "⚠", title: "Report an issue", sub: "Something wrong or not working", ph: "What went wrong? What were you doing when it happened?", tag: "Issue" },
@@ -18,25 +17,29 @@ const markRead = (uid, roomId) => { try { localStorage.setItem(`chatRead:${uid}:
 
 export async function render(main, { flash = () => {} } = {}) {
   const st = getState(), uid = st.user.uid, myName = st.profile?.name || st.user.displayName || st.user.email || "";
-  const caOk = await myAnalystAccess(st.profile?.inviteCode).catch(() => true);
-  const caId = `ca_${uid}`, issueId = `issue_${uid}`, roomId = caOk ? caId : issueId;
+  // (update 892) open to everyone; each kind in its own conversation (sup_issue_{uid}, sup_question_{uid}, sup_feature_{uid}),
+  // so Callaway's side keeps them in separate buckets; the person sees them all as one conversation. Older ones too
+  // (ca_{uid}: everything before; issue_{uid}: the admin-only reports)
+  const caOk = true, caId = `ca_${uid}`, issueId = `issue_${uid}`, roomOf = (k) => `sup_${k}_${uid}`, roomId = roomOf("question");
+  let lastRoom = null; // (a reply goes to the conversation of the latest message)
   let staffIds = [...adminUids], prevPage = null;
   try { prevPage = sessionStorage.getItem("ta.prevPage"); } catch { /* */ }
   const unsubs = [];
   unsubs.push(onSnapshot(doc(db, "chatStaff", "all"), (d) => { staffIds = [...new Set([...adminUids, ...(d.exists() ? d.data().uids || [] : [])])]; }, () => {}));
 
   // the room, made the first time (Callaway's analysts and the admin in it; the admin alone without analyst access)
-  async function ensureRoom() {
-    const team = (caOk ? [...new Set([...adminUids, ...staffIds])] : adminUids).filter((x) => x !== uid);
+  async function ensureRoom(roomId, topic) {
+    const team = [...new Set([...adminUids, ...staffIds])].filter((x) => x !== uid);
     if (!team.length) throw new Error("no staff");
     const ref = doc(db, "chatRooms", roomId), snap = await getDoc(ref);
-    const base = caOk ? { callaway: true, name: "Callaway Analyst" } : { issue: true, name: "Report an issue" };
+    const base = roomId === caId ? { callaway: true, name: "Callaway Analyst" } : roomId === issueId ? { issue: true, name: "Report an issue" } : { callaway: true, name: "Callaway Analyst", topic };
     if (!snap.exists()) await setDoc(ref, { type: "group", ...base, members: [uid, ...team], createdBy: uid, createdAt: serverTimestamp(), lastAt: serverTimestamp(), lastText: "", lastBy: "" });
     else if (!team.every((x) => snap.data().members.includes(x))) await updateDoc(ref, { members: [...new Set([...snap.data().members, ...team])] }).catch(() => {});
   }
   async function send(topic, text) {
     const t = TOPICS.find((x) => x.k === topic), body = `${t ? `[${t.tag}] ` : ""}${text}${topic === "issue" && prevPage ? `\n\n(Page: ${prevPage})` : ""}`.slice(0, 2000);
-    await ensureRoom();
+    const roomId = topic ? roomOf(topic) : lastRoom || roomOf("question");
+    await ensureRoom(roomId, topic || roomTopic(roomId));
     await addDoc(collection(db, "chatRooms", roomId, "messages"), { uid, name: myName, body, ...(topic ? { topic } : {}), createdAt: serverTimestamp() });
     await updateDoc(doc(db, "chatRooms", roomId), { lastAt: serverTimestamp(), lastText: body.slice(0, 120), lastBy: uid }).catch(() => {});
   }
@@ -66,22 +69,26 @@ export async function render(main, { flash = () => {} } = {}) {
   const replyB = el("button", { type: "button", class: "btn" }, "Send");
   replyB.addEventListener("click", async () => { const t = reply.value.trim(); if (!t) return; replyB.disabled = true; try { await send(null, t); reply.value = ""; } catch { flash("Couldn't send that just now.", "error"); } finally { replyB.disabled = false; } });
   const byRoom = new Map(), ms = (t) => (t?.toMillis ? t.toMillis() : 0);
+  function roomTopic(id) { const m = /^sup_(issue|question|feature)_/.exec(id); return m ? m[1] : null; }
+  const replyTo = el("span", { class: "muted small sp-replyto" });
   const paint = () => {
-    const all = [...byRoom.values()].flat().sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
+    const all = [...byRoom].flatMap(([id, xs]) => xs.map((m) => ({ ...m, room: id, topic: m.topic || roomTopic(id) || undefined }))).sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
+    const lastM = all.at(-1); lastRoom = lastM ? (lastM.room === caId || lastM.room === issueId ? roomOf(lastM.topic || "question") : lastM.room) : null;
+    { const t = TOPICS.find((x) => x.k === roomTopic(lastRoom || "")); replyTo.textContent = t ? `Replying to your latest: ${t.tag}` : ""; }
     if (!all.length) { mount(list, el("li", { class: "sp-empty muted" }, "Nothing here yet. Pick one of the three above to get in touch: Callaway's analysts and the admin will reply here.")); return; }
     mount(list, all.map((m) => { const mine = m.uid === uid, t = TOPICS.find((x) => x.k === m.topic) || (/^\[(Issue|Question|Feature request)\]/.exec(m.body || "") ? TOPICS.find((x) => m.body.startsWith(`[${x.tag}]`)) : null);
       const body = String(m.body || "").replace(/^\[(Issue|Question|Feature request)\]\s*/, "");
       return el("li", { class: `sp-m${mine ? " mine" : ""}` }, [el("div", { class: "sp-who" }, [el("strong", {}, mine ? "You" : "Callaway Analyst"), t ? el("span", { class: `sp-tag sp-${t.k}` }, t.tag) : null, el("span", { class: "muted small" }, formatWhen(m.createdAt))]), el("p", {}, body)]); }));
     list.lastElementChild?.scrollIntoView({ block: "nearest" });
-    markRead(uid, roomId);
+    for (const id of byRoom.keys()) markRead(uid, id);
   };
-  for (const id of [...new Set([roomId, issueId])]) unsubs.push(onSnapshot(query(collection(db, "chatRooms", id, "messages"), orderBy("createdAt", "asc")), (s) => { byRoom.set(id, s.docs.map((d) => ({ id: d.id, ...d.data() }))); paint(); }, () => { byRoom.set(id, []); paint(); }));
+  for (const id of [roomOf("issue"), roomOf("question"), roomOf("feature"), caId, issueId]) unsubs.push(onSnapshot(query(collection(db, "chatRooms", id, "messages"), orderBy("createdAt", "asc")), (s) => { byRoom.set(id, s.docs.map((d) => ({ id: d.id, ...d.data() }))); paint(); }, () => { byRoom.set(id, []); paint(); }));
   setDoc(doc(db, "chatRooms", roomId, "reads", uid), { at: serverTimestamp() }).catch(() => {});
 
   mount(main, el("div", { class: "sp" }, [
     el("header", { class: "page-head" }, [el("h1", {}, "Chat & support"), el("p", { class: "muted" }, caOk ? "Everything you send here goes to Callaway's analysts and the admin, and they reply here." : "Everything you send here goes to the admin, who replies here.")]),
     cards, compose,
-    el("section", { class: "panel sp-conv" }, [el("h3", {}, caOk ? "Your conversation with Callaway" : "Your conversation with the admin"), list, el("div", { class: "sp-replyrow" }, [reply, replyB])]),
+    el("section", { class: "panel sp-conv" }, [el("h3", {}, caOk ? "Your conversation with Callaway" : "Your conversation with the admin"), list, replyTo, el("div", { class: "sp-replyrow" }, [reply, replyB])]),
   ]));
   return () => unsubs.forEach((f) => { try { f(); } catch { /* */ } });
 }

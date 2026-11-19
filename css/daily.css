@@ -1268,3 +1268,7 @@ th.bs-lastn .peak-len { top: 0 !important; margin: 0 !important; }
 .sc .sc-ol { font-weight: 600; font-size: 0.85rem; } .sc .sc-odd b { text-align: right; font-variant-numeric: tabular-nums; }
 .sc .sc-ob { height: 10px; border-radius: 5px; background: rgba(128,128,128,0.18); overflow: hidden; } .sc .sc-ob i { display: block; height: 100%; background: #ffcc00; border-radius: 5px; }
 .sc .sc-parts { margin: 0 0 10px; }
+/* (update 892) Chat: the support conversations in buckets (Issues, Questions, Feature requests) */
+.chat-bucket { list-style: none; padding: 8px 10px 2px 22px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted, #8e8e93); }
+.chat-bucket-issue > span:first-child { color: #ff6b5f; } .chat-bucket-question > span:first-child { color: #64d2ff; } .chat-bucket-feature > span:first-child { color: #d4b483; }
+.sp-replyto { display: block; margin: 6px 0 4px; }
