@@ -100,6 +100,26 @@ export async function scoutTab(box, key0, name0) {
   try { mq.addEventListener("change", () => { if (wrap.isConnected) draw(); }); } catch { /* */ }
   const lastYAll = String(Math.max(...field.flatMap((p) => p.rounds.map((r) => Number(PI.yrOf(r)) || 0))));
   const thinMap = new Map(field.map((p) => [p.key, p.rounds.filter((r) => hasSg0(r) && Number(PI.yrOf(r)) >= Number(lastYAll) - 1).length])), thinN = (k) => thinMap.get(k) || 0;
+  // (update 911) how the tours compare, from the players who crossed: everyone ranked on a tour one season and on the PGA
+  // Tour the next (or on both in the same season). Their place on each, as a share of the way down that season's
+  // leaderboard, fitted as a straight line on a log scale (log PGA share = a + b × log share on his tour), so "1st on the
+  // Korn Ferry" maps to the PGA place such players actually reached
+  const bridgeMemo = new Map();
+  function bridge(T) { if (bridgeMemo.has(T)) return bridgeMemo.get(T); let out = null;
+    if (T && T !== FT) { const BT = build(T), BP = build(FT), pairs = [];
+      for (const y of BT.years) for (const [k, o] of BT.season[y].by) { const nm = BT.P.find((p) => p.k === k)?.nm || k;
+        const same = BP.season[y]?.by.get(k), nx = BP.season[String(Number(y) + 1)]?.by.get(k);
+        if (same) pairs.push({ k, nm, y, kind: "same", qT: o.rank / BT.season[y].of, qP: same.rank / BP.season[y].of, rT: o.rank, rP: same.rank, yP: y, w: Math.min(o.n, same.n) });
+        if (nx) pairs.push({ k, nm, y, kind: "next", qT: o.rank / BT.season[y].of, qP: nx.rank / BP.season[String(Number(y) + 1)].of, rT: o.rank, rP: nx.rank, yP: String(Number(y) + 1), w: Math.min(o.n, nx.n) }); }
+      const nP = Math.round(BP.season[BP.years.filter((y) => y !== BP.lastY).at(-1) || BP.lastY]?.of || 0), nT = Math.round(BT.season[BT.years.filter((y) => y !== BT.lastY).at(-1) || BT.lastY]?.of || 0);
+      let a = 0, b = 1, fit = "none";
+      if (pairs.length >= 8) { let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0; for (const q of pairs) { const x = Math.log(q.qT), y0 = Math.log(q.qP), w = q.w; sw += w; sx += w * x; sy += w * y0; sxx += w * x * x; sxy += w * x * y0; }
+        const mx = sx / sw, my = sy / sw, vx = sxx / sw - mx * mx; b = vx > 1e-9 ? Math.max(0.2, Math.min(1.5, (sxy / sw - mx * my) / vx)) : 1; a = my - b * mx; fit = "line"; }
+      else if (pairs.length >= 3) { a = pairs.reduce((t, q) => t + Math.log(q.qP / q.qT), 0) / pairs.length; fit = "shift"; }
+      const eq = (rank, nOf = nT) => (fit === "none" || !nP ? null : Math.max(1, Math.round(nP * Math.min(1, Math.exp(a + b * Math.log(Math.max(1e-4, rank / Math.max(1, nOf))))))));
+      out = { T, pairs, a, b, fit, nP, nT, eq }; }
+    bridgeMemo.set(T, out); return out; }
+  const pgaEq = (T, rank, nOf) => { const br = bridge(T); return br ? br.eq(rank, nOf) : null; };
   function pickKey(k) { sel = k; if (mainTour.get(k)) tour = mainTour.get(k); draw(); requestAnimationFrame(() => wrap.querySelector(".sc-detail")?.scrollIntoView({ behavior: "smooth", block: "start" })); }
   function draw() {
     const B = build(tour), { years, lastY } = B, M = modelOf(tour), T1 = M.tiers[0], T2 = M.tiers[1];
@@ -121,7 +141,7 @@ export async function scoutTab(box, key0, name0) {
     function drawBoard() {
       // (update 910) every tour together: each player on his main tour; the forecasts all on the PGA Tour
       const list = allRows().filter((r) => r.nSeasons >= 1);
-      const S = (r) => modelOf(r.T).scout(r.k), rankNow = (r) => S(r)?.cur.rank ?? r.last ?? null, rnTxt = (r) => { const n = rankNow(r); return n ? `${ord(n)} ${TS(r.T)}` : "—"; };
+      const S = (r) => modelOf(r.T).scout(r.k), rankNow = (r) => S(r)?.cur.rank ?? r.last ?? null, rnTxt = (r) => { const n = rankNow(r); if (!n) return "—"; const e = r.T !== FT ? pgaEq(r.T, n, S(r)?.cur.of) : null; return `${ord(n)} ${TS(r.T)}${e ? ` (≈${ord(e)} PGA)` : ""}`; };
       const dirOf = (r) => { const ch = r.now && r.ago ? r.ago.r - r.now.r : null; if (ch == null) return { k: "none", t: "—", ch }; const big = Math.max(5, Math.round(0.15 * r.ago.r)); return ch >= big ? { k: "up", t: "▲ Rising", ch } : -ch >= big ? { k: "down", t: "▼ Slipping", ch } : { k: "steady", t: "● Steady", ch }; };
       if (!["rank", "dir", "next", "t1", "age", "nm"].includes(sortK)) { sortK = "next"; sortDir = 1; }
       const val = (r) => (sortK === "rank" ? rankNow(r) ?? 1e9 : sortK === "dir" ? -(dirOf(r).ch ?? -1e9) : sortK === "next" ? ensureFc(tour).map.get(r.k)?.years?.[0]?.rank ?? 1e9 : sortK === "t1" ? ensureFc(tour).map.get(r.k)?.years?.[2]?.rank ?? 1e9 : sortK === "age" ? r.age ?? 1e9 : r.nm);
@@ -195,7 +215,9 @@ export async function scoutTab(box, key0, name0) {
         return card(`${r.nm}`, "#ffcc00", [el("p", { class: "sc-verdict" }, `${lastName(r.nm)} isn't ranked on the ${tour || "tour"} yet: ${n0} round${n0 === 1 ? "" : "s"} here on record, and a player needs ${MINTXT} in a season to be ranked.`),
           f0?.years?.length ? el("p", {}, [el("b", {}, "Forecast, with little data on this tour: "), f0.years.map((y) => `${y.year} ≈${ord(y.rank)} (${sg2(y.total)} per round)`).join(" · "), el("small", { class: "muted", style: "display:block;margin-top:4px" }, `With only ${f0.flags?.toursRounds ?? n0} rounds here in the last two seasons, this leans on his results on other tours (adjusted for how strong those fields are) and on the tour average. Treat it as a rough guess.`)]) : F0.busy ? el("p", { class: "muted" }, "Working out the forecast…") : null]); }
       const cur = sc.cur, G = sc.grades, of = cur.of, rk = cur.rank, so = cur.partial ? " this season so far" : ` in ${cur.y}`;
-      const level = rk <= 10 ? "an elite, top-10 player" : rk <= 25 ? "a top-25 player" : rk <= 50 ? "a top-50 player" : rk <= of / 2 ? "an above-average tour player" : "a below-average tour player";
+      const eqP = tour !== FT ? pgaEq(tour, rk, of) : null; // (update 911) his tour's rank, in PGA terms (from the players who crossed)
+      const level0 = rk <= 10 ? "an elite, top-10 player" : rk <= 25 ? "a top-25 player" : rk <= 50 ? "a top-50 player" : rk <= of / 2 ? "an above-average tour player" : "a below-average tour player";
+      const level = eqP ? `${level0} on the ${TS(tour)} (about ${ord(eqP)}-on-the-PGA level, by where players who moved up actually landed)` : level0;
       const ch = r.now && r.ago ? r.ago.r - r.now.r : null, big = (a) => Math.max(5, Math.round(0.15 * a));
       const dir = ch == null ? "steady" : ch >= big(r.ago.r) ? "up" : -ch >= big(r.ago.r) ? "down" : "steady";
       const dirTxt = dir === "up" ? `on the rise (his last ${ROLL} rounds rank ${ord(r.now.r)}, up from ${ord(r.ago.r)} a year ago)` : dir === "down" ? `slipping (his last ${ROLL} rounds rank ${ord(r.now.r)}, down from ${ord(r.ago.r)} a year ago)` : r.now && r.now.r > rk * 1.4 && r.now.r - rk >= 5 ? `level with a year ago, but cooling lately: his last ${ROLL} rounds rank ${ord(r.now.r)}, against ${ord(rk)} for the season` : r.now && r.now.r < rk * 0.7 && rk - r.now.r >= 5 ? `level with a year ago, but playing better lately: his last ${ROLL} rounds rank ${ord(r.now.r)}, against ${ord(rk)} for the season` : r.now ? `holding steady (his last ${ROLL} rounds rank ${ord(r.now.r)})` : "not playing enough lately to judge his form";
@@ -224,7 +246,7 @@ export async function scoutTab(box, key0, name0) {
       return card(`${r.nm} · scouting report`, "#ffcc00", [
         el("p", { class: "sc-verdict" }, `${last} is ${level} on the ${tour || "tour"} (${ord(rk)} of ${of}${so}) and is ${dirTxt}.`),
         el("div", { class: "sc-tiles" }, [
-          tile("Rank now", ord(rk), `of ${of}${so}`),
+          tile("Rank now", ord(rk), `of ${of}${so}${eqP ? ` on the ${TS(tour)} · ≈${ord(eqP)} on the PGA` : ""}`),
           tile("Direction", arrow, r.now && r.ago ? `last ${ROLL}: ${ord(r.ago.r)} → ${ord(r.now.r)}` : "", `dir-${dir}`),
           y1 ? tile(`${y1.year} on the PGA Tour (best guess)`, `≈${ord(y1.rank)}`, tour !== FT ? `likely ${ord(y1.rankHi)}–${ord(y1.rankLo)} · ${y1.cardLevel != null ? `${Math.round(y1.cardLevel * 100)}% chance of a PGA card-level season` : "if he plays there"}` : `likely ${ord(y1.rankHi)}–${ord(y1.rankLo)}`) : tile("Next season (best guess)", "…", F.busy ? "working it out" : "not enough data"),
           t10 != null ? tile("Chance of a PGA top-10 season", `${Math.round(t10 * 100)}%`, oneIn(t10)) : tile("Chance of a PGA top-10 season", "…", FU.busy ? "working it out" : "—")]),
@@ -274,13 +296,26 @@ export async function scoutTab(box, key0, name0) {
     }
     function drawHow() {
       const f = M.fit;
-      mount(boardBox, card("How it works", "#8e8e93", [el("ol", { class: "ip-bul" }, [
+      const others = tours.filter((T) => T !== FT), FC0 = ensureFc();
+      const bridgeCard = card("How the tours compare (from players who crossed)", "#64d2ff", [el("p", {}, `For each tour: every player ranked on it one season and on the PGA Tour the next, or on both in the same season. Where they landed on the PGA gives the PGA equivalent of a place on that tour. "The forecaster says" is the PGA place the forecaster predicts next season for players at that place now, a check that the two agree.`),
+        ...others.map((T) => { const br = bridge(T); if (!br) return null; const nM = br.pairs.length;
+          if (br.fit === "none") return el("p", { class: "muted" }, `${TS(T)}: only ${nM} player-season${nM === 1 ? "" : "s"} crossed to the PGA in the file so far: too few to say yet.`);
+          const cur = build(T), cy = cur.lastY, nowList = [...(cur.season[cy]?.by || new Map())].map(([k, o]) => ({ k, rank: o.rank }));
+          const fcAt = (r0) => { const xs = nowList.filter((x) => Math.abs(x.rank - r0) <= Math.max(2, Math.round(r0 * 0.25))).map((x) => FC0.map.get(x.k)?.years?.[0]?.rank).filter(Boolean).sort((a, b) => a - b); return xs.length ? xs[Math.floor(xs.length / 2)] : null; };
+          const rows = [1, 5, 10, 25, 50, 100].filter((x) => x <= (br.nT || 999)).map((x) => el("tr", {}, [el("td", {}, `${ord(x)} on the ${TS(T)}`), el("td", { class: "num strong" }, `≈${ord(br.eq(x))}`), el("td", { class: "num" }, (() => { const v = fcAt(x); return v ? `≈${ord(v)}` : FC0.busy ? "…" : "—"; })())]));
+          const ex = [...br.pairs].sort((a, b) => a.rT - b.rT).slice(0, 8);
+          return el("div", { class: "sc-bridge" }, [el("p", { class: "ip-kick" }, `${TS(T)} → PGA · ${nM} crossings${br.fit === "shift" ? " (few: a single shift, not a full fit)" : ""}`),
+            el("div", { class: "ip-tw" }, el("table", { class: "ip-t" }, [el("thead", {}, el("tr", {}, ["Place on his tour", "PGA equivalent (where movers landed)", "The forecaster says (next season)"].map((h0, i) => el("th", { class: i ? "num" : null }, h0)))), el("tbody", {}, rows)])),
+            el("p", { class: "muted small" }, ["Examples: ", ex.map((q) => `${q.nm} ${ord(q.rT)} ${TS(T)} ${q.y} → ${ord(q.rP)} PGA ${q.yP}${q.kind === "same" ? " (same season)" : ""}`).join(" · ")])]); }),
+        samp("Limits: the players who cross are mostly the best of the other tours (cards go to the top of the Korn Ferry and DP World), so the top of each tour is measured best; and a player who struggles on the PGA plays fewer events and may not get a ranked season, which can flatter the mapping a little.")]);
+      void bridgeCard;
+      mount(boardBox, [card("How it works", "#8e8e93", [el("ol", { class: "ip-bul" }, [
         el("li", {}, [el("b", {}, "Comps (from baseball's PECOTA and FiveThirtyEight's NBA CARMELO). "), `Every player-season in the file is a profile: strokes gained per round and in each part of the game, the change from the season before, age (when the file has birth dates), seasons on the tour and rounds played. Each is put on the same scale (standard deviations across every player-season) and weighted (strokes gained per round counts most). A player's latest season is matched with the nearest past player-seasons that have a season after them. Similarity: 100 identical, 0 as different as a typical pair of players.`]),
         el("li", {}, [el("b", {}, "Predictions (next season, three seasons out, the odds). "), "The site's one forecaster, the same as Comparisons' Future Outlook, built the way baseball's projection systems (Marcel, Steamer) and Data Golf are: each player's rounds over recent seasons, newer ones weighted more (how much more is learned from this file); every round adjusted for how strong its field was (which also puts the tours on one scale); pulled toward the tour average by how many rounds there are; an age curve learned from how players' seasons changed with age; ranges set so that 8 in 10 past seasons it hadn't seen landed inside; and checked by forecasting each past season from only the seasons before it. The odds of a top-10 / 50 / 100 season come from playing the next season out thousands of times for the whole field."]),
         el("li", {}, [el("b", {}, "Ratings, 0-100. "), "The percentile: the share of the latest full season's ranked players the number beats, so 50 is the middle player, 90 the top 10% and 99 the best. Now: this season. Next season and Ceiling: the projection and a good outcome (its 80th percentile). One for each part of the game the same way. (Baseball scouts use a 20-80 scale; a percentile says the same thing in plain numbers.)"]),
         el("li", {}, [el("b", {}, "Fast risers. "), `The rolling ${ROLL}-round strokes gained now against a year ago, flagged "Clear" only when the rise is bigger than luck explains.`]),
         el("li", {}, [el("b", {}, "Before the breakout. "), "The past seasons most like a player's latest that came the year before a top-10 season (from outside the top 10): the paths successful players took."]),
-        el("li", {}, [el("b", {}, "Limits. "), `The file covers ${B.years[0]}-${B.years.at(-1)}: comps and odds learn from those seasons only (${M.pool.length} player-seasons with a season after them), so they get sharper as seasons are added. The current season counts as it stands so far.`])])]));
+        el("li", {}, [el("b", {}, "Limits. "), `The file covers ${B.years[0]}-${B.years.at(-1)}: comps and odds learn from those seasons only (${M.pool.length} player-seasons with a season after them), so they get sharper as seasons are added. The current season counts as it stands so far.`])])]), bridgeCard]);
     }
     // (update 905) the predicted leaderboards: every player's predicted finish at the end of each of the next three seasons
     let predH = 0;
