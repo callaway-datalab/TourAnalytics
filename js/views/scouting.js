@@ -40,7 +40,9 @@ export async function scoutTab(box, key0, name0) {
     const P = field.map((p) => { const hasSg = (r) => (r.shots || []).some((x) => x.sg != null && (x.w ?? 1) > 0); /* (update 894: a round with no strokes gained in the file isn't a 0.00 round) */
       let rs = p.rounds.filter((r) => onT(r) && !r.eventLevel && hasSg(r)); if (!rs.length) rs = p.rounds.filter((r) => onT(r) && hasSg(r)); /* (a tour kept event by event: those) */
       rs = rs.slice().sort((a, b) => dOf(a) - dOf(b)); const ds = rs.map(dOf), cum = [0]; for (const r of rs) cum.push(cum.at(-1) + tot(r));
-      return { k: p.key, nm: p.name, birth: p.birth, rs, ds, cum }; }).filter((p) => p.rs.length);
+      // (update 901) each season's rounds by date with running sums: the season-to-date rank at any date
+      const sy = new Map(); for (const r of rs) { const y = PI.yrOf(r), o = sy.get(y) || sy.set(y, { ds: [], cum: [0] }).get(y); o.ds.push(dOf(r)); o.cum.push(o.cum.at(-1) + tot(r)); }
+      return { k: p.key, nm: p.name, birth: p.birth, rs, ds, cum, sy }; }).filter((p) => p.rs.length);
     const years = [...new Set(P.flatMap((p) => p.rs.map(PI.yrOf)))].sort();
     // year-end ranks: each season, total and each part of the game, among players with the season's minimum rounds
     const season = {}; for (const y of years) { const F = P.map((p) => ({ p, rs: p.rs.filter((r) => PI.yrOf(r) === y) })).filter((x) => x.rs.length >= DEF.MIN.seasonRounds);
@@ -60,7 +62,11 @@ export async function scoutTab(box, key0, name0) {
       const ows = p.rs.map(owgrOf).filter((v) => v != null);
       return { p, k: p.k, nm: p.nm, age: p.birth ? Math.floor((Date.now() - Date.parse(p.birth)) / (365.25 * DAY)) : null, ranks, rk, streak, nSeasons: have.length, now, ago,
         trend: now && ago ? ago.r - now.r : null, ow: ows.length ? ows.at(-1) : null, last: rk.findLast((v) => v != null) ?? null }; });
-    const out = { P, years, season, lastY, lastDate, rows, rankAt, hasOw: rows.some((r) => r.ow != null) }; memo.set(T, out); return out;
+    // (update 901) the season-to-date rank: strokes gained per round in that season up to the date, against everyone else's
+    // season so far, among players with the season's minimum rounds by then (what the year-end rank is, at the season's end)
+    const stdOf = (p, y, t) => { const o = p.sy.get(y); if (!o) return null; const i = ub(o.ds, t); return i >= DEF.MIN.seasonRounds ? o.cum[i] / i : null; };
+    const stdRankAt = (p, y, t) => { const me = stdOf(p, y, t); if (me == null) return null; let r = 1, n = 0; for (const o of P) { const v = stdOf(o, y, t); if (v == null) continue; n++; if (o !== p && v > me) r++; } return { r, n, v: me }; };
+    const out = { P, years, season, lastY, lastDate, rows, rankAt, stdRankAt, hasOw: rows.some((r) => r.ow != null) }; memo.set(T, out); return out;
   }
 
   // (update 900) phones: cards instead of wide tables, a sort menu instead of column headers
@@ -77,7 +83,7 @@ export async function scoutTab(box, key0, name0) {
     const minSel = el("select", { class: "ip-sel", "aria-label": "Seasons ranked" }, [1, 2, 3].map((n) => el("option", { value: String(n), ...(n === minSeasons ? { selected: true } : {}) }, n === 1 ? "Any players" : `${n}+ seasons ranked`)));
     minSel.addEventListener("change", () => { minSeasons = Number(minSel.value); drawBoard(); });
     const detail = el("div", { class: "sc-detail" }), boardBox = el("div", {});
-    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, `Scouting · ${tour || ""}`.trim()), el("h2", { class: "ip-h" }, "Scouting"),
+    mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, [`Scouting · ${tour || ""}`.trim(), el("span", { class: "sc-ver", title: "The version of this page" }, " · v901")]), el("h2", { class: "ip-h" }, "Scouting"),
       el("p", { class: "muted" }, `Who's rising, how good they could get, and who they look like. Ratings 0-100 (better than that % of the tour), odds of a top-${M.tiers[0] || 10} season, comps from every past season in the file, fast risers, and each career's trajectory (year-end strokes-gained rank, the rolling rank over the last ${ROLL} rounds${B.hasOw ? ", the OWGR" : ""}). Tap a player for their report.`)])),
       el("div", { class: "sc-ctl" }, [pills, search, minSel]), partPills(), detail, boardBox]);
     function partPills() { return el("div", { class: "ip-pills sc-parts" }, [["board", "Every player"], ["risers", "Fast risers"], ["how", "How it works"]].map(([v, l]) => { const b = el("button", { type: "button", class: `ip-pill${v === part ? " on" : ""}`, "aria-pressed": String(v === part) }, l); b.addEventListener("click", () => { part = v; draw(); }); return b; })); }
@@ -134,8 +140,8 @@ export async function scoutTab(box, key0, name0) {
       const p = r.p, last = lastName(r.nm);
       // the chart's points: the rolling rank at the end of each of their events (and the OWGR there)
       const ends = []; { const byEv = new Map(); for (const x of p.rs) byEv.set(`${x.event}|${PI.yrOf(x)}`, Math.max(byEv.get(`${x.event}|${PI.yrOf(x)}`) || 0, dOf(x))); for (const t of [...byEv.values()].sort((a, b) => a - b)) ends.push(t); }
-      const pts = ends.map((t) => ({ t, rr: B.rankAt(p, t), ow: (() => { const i = p.ds.findLastIndex((d) => d <= t); for (let j = i; j >= 0; j--) { const v = owgrOf(p.rs[j]); if (v != null) return v; } return null; })() })).filter((x) => x.rr || x.ow != null);
-      const yrPts = years.map((y, i) => r.ranks[i] ? { y, o: r.ranks[i], t: Math.max(...p.rs.filter((x) => PI.yrOf(x) === y).map(dOf)) } : null).filter(Boolean);
+      const pts = ends.map((t) => ({ t, y: String(new Date(t).getFullYear()), rr: B.rankAt(p, t), sr: B.stdRankAt(p, String(new Date(t).getFullYear()), t), ow: (() => { const i = p.ds.findLastIndex((d) => d <= t); for (let j = i; j >= 0; j--) { const v = owgrOf(p.rs[j]); if (v != null) return v; } return null; })() })).filter((x) => x.rr || x.sr || x.ow != null);
+      const yrPts = years.map((y, i) => r.ranks[i] ? { y, partial: y === lastY, o: r.ranks[i], t: Math.max(...p.rs.filter((x) => PI.yrOf(x) === y).map(dOf)) } : null).filter(Boolean);
       const chart = careerChart(pts, yrPts, B.hasOw, wrap.clientWidth || 640);
       // the story
       const seq = yrPts.map((x) => `${ord(x.o.rank)}${x.y === lastY ? ` (${x.y} so far)` : ` (${x.y})`}`).join(" → ");
@@ -157,7 +163,7 @@ export async function scoutTab(box, key0, name0) {
           return el("div", { class: "sc-sea" }, [el("div", { class: "sc-pc-top" }, [el("strong", {}, `${x.y}${x.y === lastY ? " so far" : ""}`), el("span", {}, [el("b", {}, ord(x.o.rank)), d ? el("small", { class: d > 0 ? "pos" : "neg" }, ` ${d > 0 ? "▲" : "▼"}${Math.abs(d)}`) : null, el("span", { class: "muted small" }, ` · ${sg2(x.o.sg)} · ${x.o.n} rds`)])]),
             el("div", { class: "sc-sea-cats" }, PI.CATS.map((c) => el("span", {}, [el("small", { class: "muted" }, { OTT: "Tee", APP: "Approach", ARG: "Short game", PUTT: "Putting" }[c]), el("b", {}, sg2(x.o.cat[c])), el("small", { class: "muted" }, ord(x.o.cr[c]))])))]); }))
         : segs.length ? el("div", { class: "ip-tw" }, el("table", { class: "ip-t sc-seasons" }, [el("thead", {}, el("tr", {}, ["Season", "Rounds", "SG per round", "Rank", ...PI.CATS.map((c) => PI.CATN[c]), B.hasOw ? "OWGR" : null].filter(Boolean).map((h, i) => el("th", { class: i ? "num" : null }, h)))), el("tbody", {}, segs)])) : null,
-        samp(`Strokes gained per round on the ${tour || "tour"}, with the rank among that season's players with ${DEF.MIN.seasonRounds}+ rounds in each part of the game: which parts moved ${last}'s rank. The chart: the rolling rank over the last ${ROLL} rounds at the end of each event (higher on the chart is better)${B.hasOw ? ", the OWGR beside it" : ""}, and each season's year-end rank.`)])]);
+        samp(`Strokes gained per round on the ${tour || "tour"}, with the rank among that season's players with ${DEF.MIN.seasonRounds}+ rounds in each part of the game: which parts moved ${last}'s rank. The chart (higher is better): each season's rank so far after each event, ending on its year-end rank; faint behind it, the rank over the last ${ROLL} rounds (form, across seasons)${B.hasOw ? "; the OWGR dashed" : ""}.`)])]);
     }
     // (update 890) the scouting report: grades, the projection and tier odds, comps, and the paths successful players took
     function reportCard(r) {
@@ -214,14 +220,16 @@ export async function scoutTab(box, key0, name0) {
 
 /** the career chart: rank over time (1 at the top), the rolling rank as a line, each season's year-end rank a dot, the OWGR a second line */
 function careerChart(pts, yrPts, hasOw, boxW = 640) {
-  const roll = pts.filter((x) => x.rr), ow = hasOw ? pts.filter((x) => x.ow != null) : [];
-  if (roll.length + yrPts.length + ow.length < 2) return el("p", { class: "muted small" }, "Not enough rounds yet for a chart.");
-  const W = Math.max(320, Math.min(760, Math.round(boxW) - 40)), H = W < 500 ? 230 : 260, L = 34, R = 10, T = 16, Bm = 24; // (drawn at the width it shows: the text stays readable on a phone)
-  const ts = [...roll.map((x) => x.t), ...yrPts.map((x) => x.t), ...ow.map((x) => x.t)], t0 = Math.min(...ts), t1 = Math.max(...ts) + 1;
-  const mx = Math.max(10, ...roll.map((x) => x.rr.r), ...yrPts.map((x) => x.o.rank), ...ow.map((x) => x.ow));
+  // (update 901) the main line: the season-to-date rank (each season its own line, ending on its year-end rank, so the labels
+  // and the line agree); behind it, faint, the rolling 24-round rank (form across seasons); the OWGR when the file has it
+  const std = pts.filter((x) => x.sr), roll = pts.filter((x) => x.rr), ow = hasOw ? pts.filter((x) => x.ow != null) : [];
+  if (std.length + roll.length + yrPts.length < 2) return el("p", { class: "muted small" }, "Not enough rounds yet for a chart.");
+  const W = Math.max(320, Math.min(1100, Math.round(boxW) - 40)), H = W < 500 ? 240 : 300, L = 36, R = 34, T = 18, Bm = 26; // (drawn at the width it shows: text the same size everywhere)
+  const ts = [...std.map((x) => x.t), ...roll.map((x) => x.t), ...yrPts.map((x) => x.t), ...ow.map((x) => x.t)], t0 = Math.min(...ts) - 10 * 864e5, t1 = Math.max(...ts) + 10 * 864e5;
+  const worst = Math.max(10, ...std.map((x) => x.sr.r), ...roll.map((x) => x.rr.r), ...yrPts.map((x) => x.o.rank), ...ow.map((x) => x.ow));
+  const TICKS = [1, 5, 10, 25, 50, 100, 150, 200, 300, 400, 500, 700, 1000], mx = TICKS.find((v) => v >= worst) || worst, ticks = TICKS.filter((v) => v <= mx); // (the scale ends on a labelled line below the lowest rank)
   // a square-root scale: the top of the ranks gets more room (1st to 10th matters more than 150th to 160th)
   const X = (t) => L + ((t - t0) / (t1 - t0)) * (W - L - R), Y = (r) => T + (Math.sqrt(Math.max(1, r)) - 1) / (Math.sqrt(mx) - 1) * (H - T - Bm);
-  const ticks = [1, 5, 10, 25, 50, 100, 150, 200, 300, 400, 500, 700].filter((v) => v <= mx); // (update 894: the whole scale, down to the lowest rank shown)
   const g = [];
   for (const v of ticks) g.push(sv("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), class: "sc-grid" }), sv("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", class: "sc-ax" }, String(v)));
   const y0 = new Date(t0).getFullYear(), y1 = new Date(t1).getFullYear();
@@ -229,10 +237,13 @@ function careerChart(pts, yrPts, hasOw, boxW = 640) {
   for (let y = y0; y <= y1; y++) { const a = Math.max(t0, Date.parse(`${y}-01-01T12:00:00`)), b = Math.min(t1, Date.parse(`${y + 1}-01-01T12:00:00`)); if (b - a > 20 * 864e5) g.push(sv("text", { x: (X(a) + X(b)) / 2, y: H - 8, "text-anchor": "middle", class: "sc-ax" }, String(y))); }
   const path = (xs, f) => xs.map((x, i) => `${i ? "L" : "M"}${X(x.t).toFixed(1)} ${Y(f(x)).toFixed(1)}`).join(" ");
   if (ow.length > 1) g.push(sv("path", { d: path(ow, (x) => x.ow), class: "sc-ow" }));
-  if (roll.length > 1) g.push(sv("path", { d: path(roll, (x) => x.rr.r), class: "sc-roll" }));
-  for (const x of roll) g.push(sv("circle", { cx: X(x.t), cy: Y(x.rr.r), r: 2.2, class: "sc-rolld" }, sv("title", {}, `${fmtD(x.t)}: ${ord(x.rr.r)} of ${x.rr.n} over the last ${ROLL} rounds (${sg2(x.rr.v)} per round)${x.ow != null ? `; OWGR ${Math.round(x.ow)}` : ""}`)));
-  for (const x of yrPts) g.push(sv("circle", { cx: X(x.t), cy: Y(x.o.rank), r: 5.5, class: "sc-yrd" }, sv("title", {}, `${x.y} year-end: ${ord(x.o.rank)} (${sg2(x.o.sg)} per round, ${x.o.n} rounds)`)),
-    sv("text", { x: X(x.t), y: Y(x.o.rank) - 9, "text-anchor": "middle", class: "sc-yrl" }, ord(x.o.rank)));
-  return el("div", { class: "sc-chart" }, [sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "sc-svg", role: "img", "aria-label": "Rank over time" }, g),
-    el("div", { class: "td-legend sc-lg" }, [el("span", { class: "sc-lg-roll" }, `Rolling rank (last ${ROLL} rounds)`), el("span", { class: "sc-lg-yr" }, "Year-end rank"), ow.length ? el("span", { class: "sc-lg-ow" }, "OWGR") : null])]);
+  if (roll.length > 1) g.push(sv("path", { d: path(roll, (x) => x.rr.r), class: "sc-roll2" }, sv("title", {}, `Rolling rank over the last ${ROLL} rounds`)));
+  // each season: its season-to-date line, ending on the year-end rank
+  for (const yp of yrPts) { const xs = std.filter((x) => x.y === yp.y && x.t < yp.t).map((x) => ({ t: x.t, r: x.sr.r, x })); xs.push({ t: yp.t, r: yp.o.rank });
+    if (xs.length > 1) g.push(sv("path", { d: path(xs, (x) => x.r), class: "sc-std" }));
+    for (const q of xs.slice(0, -1)) g.push(sv("circle", { cx: X(q.t), cy: Y(q.r), r: 2.6, class: "sc-stdd" }, sv("title", {}, `${fmtD(q.t)}: ${ord(q.r)} of ${q.x.sr.n} in ${yp.y} so far (${sg2(q.x.sr.v)} per round)${q.x.rr ? `; last ${ROLL} rounds ${ord(q.x.rr.r)}` : ""}`))); }
+  for (const x of yrPts) g.push(sv("circle", { cx: X(x.t), cy: Y(x.o.rank), r: 5.5, class: "sc-yrd" }, sv("title", {}, `${x.y}${x.partial ? " so far" : " year-end"}: ${ord(x.o.rank)} (${sg2(x.o.sg)} per round, ${x.o.n} rounds)`)),
+    sv("text", { x: X(x.t), y: Y(x.o.rank) - 10, "text-anchor": "middle", class: "sc-yrl" }, ord(x.o.rank)));
+  return el("div", { class: "sc-chart" }, [sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "sc-svg", role: "img", "aria-label": "Rank over time", style: `max-width:${W}px` }, g),
+    el("div", { class: "td-legend sc-lg" }, [el("span", { class: "sc-lg-std" }, "Season-to-date rank"), el("span", { class: "sc-lg-yr" }, "Year-end rank"), el("span", { class: "sc-lg-roll2" }, `Form: last ${ROLL} rounds`), ow.length ? el("span", { class: "sc-lg-ow" }, "OWGR") : null])]);
 }
