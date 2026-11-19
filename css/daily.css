@@ -1351,3 +1351,4 @@ html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; colo
 .sc .sc-more-det { margin: 0 0 12px; } .sc .sc-more-det > summary { cursor: pointer; padding: 10px 14px; border-radius: 12px; border: 1px dashed rgba(128,128,128,0.35); color: var(--muted, #a1a1a6); font-weight: 600; } .sc .sc-more-det[open] > summary { margin-bottom: 8px; }
 .sc .sc-chart-help { font-size: 0.86rem; color: var(--muted, #a1a1a6); margin: 4px 0 0; }
 .sc .sc-path { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted, #c7c7cc); } .sc td.sc-dir { white-space: nowrap; font-weight: 600; } .sc .sc-pc-top .sc-dir { font-weight: 700; font-size: 0.85rem; }
+.sc .sc-t td small { display: inline !important; margin-left: 4px; } .sc .sc-predon { background: rgba(100,210,255,0.06); } .sc .sc-next3 { margin: 0 0 12px; } .sc .sc-next3 small { display: block; color: var(--muted, #8e8e93); margin-top: 4px; font-size: 0.82rem; } /* (update 905) */

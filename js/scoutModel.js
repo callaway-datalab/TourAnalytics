@@ -91,7 +91,7 @@ export function scoutModel(B) {
   const rdSd = sd(P.flatMap((p) => p.rs.map((r) => (r.shots || []).reduce((t, s) => t + (s.sg || 0), 0))).slice(0, 50000));
   const noise = rdSd * Math.sqrt(2 / 24);
   const risers = (B.rows || []).filter((r) => r.now && r.ago).map((r) => { const dv = r.now.v - r.ago.v; return { r, dv, z: dv / noise, dr: r.ago.r - r.now.r }; }).sort((a, b) => b.dv - a.dv);
-  return { refY, ps, byKey, st, fit, tiers, tierLine, fieldN, dRef, scout, risers, noise, rdSd, pool };
+  return { refY, ps, byKey, st, fit, tiers, tierLine, fieldN, dRef, scout, risers, noise, rdSd, pool, rateSg: (v) => gradeOf(v, "sg") /* (update 905: a forecast's season, rated the same way) */ };
 }
 
 // the inverse of the normal curve (Acklam's approximation): a percentile → standard deviations from the middle

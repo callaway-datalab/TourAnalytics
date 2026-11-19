@@ -1,14 +1,14 @@
 // (update 403) The forecaster, off the page: learning it takes a few seconds to a minute on a big field, and on the
 // page itself that froze Compare. The page sends the field's season totals once (forecastInput), then asks for players.
 import { forecastModel, forecastPlayer, forecastStory, FORECAST_CATS } from "./forecast.js";
-let input = null, inputId = null;
+let input = null, inputId = null; const models = new Map(); // (update 905) each tour's model kept, for the next question
 self.onmessage = (e) => {
-  const { id, inputId: iid, input: inp, tour, keys, names } = e.data || {};
+  const { id, inputId: iid, input: inp, tour, keys, names, lite } = e.data || {};
   try {
-    if (inp) { input = inp; inputId = iid; }
+    if (inp) { input = inp; inputId = iid; models.clear(); }
     if (!input || iid !== inputId) { self.postMessage({ id, needInput: true }); return; }
-    const m = forecastModel(input, { tour });
-    const fcs = (keys || []).map((k, i) => { const f = forecastPlayer(m, k); if (f && names?.[i]) f.name = names[i]; return f; });
+    const m = models.get(tour) || models.set(tour, forecastModel(input, { tour })).get(tour);
+    const fcs = (keys || []).map((k, i) => { const f = forecastPlayer(m, k, { chances: !lite }); if (f && names?.[i]) f.name = names[i]; return f; });
     const ok = fcs.filter(Boolean);
     const story = forecastStory(m, ok);
     const ageAt = {};

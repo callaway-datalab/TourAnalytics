@@ -518,7 +518,7 @@ function learn(D, { tour = null } = {}) {
 }
 
 /** One player's forecast (null without anything to go on). */
-export function forecastPlayer(model, key) {
+export function forecastPlayer(model, key, { chances: withChances = true } = {}) { // (update 905: chances off for a whole-field table: they take a simulation each)
   const p = model.pIndex.get(key);
   if (p == null) return null;
   const { lastYear, years: yrs, NY } = model;
@@ -545,7 +545,7 @@ export function forecastPlayer(model, key) {
     const rank = rankAt(pr.total);
     // the rank at the top and the bottom of their likely range
     const sdL = pr.sdLevel ?? pr.sd, rankHi = rankAt(pr.total + 0.6745 * sdL), rankLo = rankAt(pr.total - 0.6745 * sdL);
-    const ch = model.chances(key, h, pr.total, pr.sd);
+    const ch = withChances ? model.chances(key, h, pr.total, pr.sd) : { top10: null, top50: null, top100: null };
     years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 0.6745 * (pr.sdLevel ?? pr.sd), hi: pr.total + 0.6745 * (pr.sdLevel ?? pr.sd), sdSeason: pr.sd, sd: pr.sd, rank, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
   }
   // (update 426) on the tour picked, raw, as the report's season table shows them (not field-adjusted), so the numbers match
