@@ -1235,3 +1235,25 @@ th.bs-lastn .peak-len { top: 0 !important; margin: 0 !important; }
 /* (update 887) Talking Points (shots you'll face, aggressiveness): green above usual, red below */
 .td-att .td-sk-bar i.pos, .td-agg .td-sk-bar i.pos { background: var(--td-up, #30d158) !important; }
 .td-att .td-sk-bar i.neg, .td-agg .td-sk-bar i.neg { background: var(--td-down, #ff453a) !important; }
+/* (update 889) Scouting: career trajectories */
+.sc .sc-ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 12px; }
+.sc .sc-q { min-width: 180px; flex: 1 1 180px; max-width: 280px; }
+.sc .sc-tw { max-height: 70vh; overflow: auto; }
+.sc .sc-t th { position: sticky; top: 0; background: var(--card, #1c1c1e); z-index: 1; white-space: nowrap; }
+.sc .sc-sort { cursor: pointer; user-select: none; } .sc .sc-sort.on { color: #bf5af2; }
+.sc .sc-row { cursor: pointer; } .sc .sc-row:hover { background: rgba(191, 90, 242, 0.08); } .sc .sc-row.on { background: rgba(191, 90, 242, 0.16); }
+.sc .sc-nm { white-space: nowrap; font-weight: 600; }
+.sc .sc-yr small, .sc .sc-seasons small { font-size: 0.72em; }
+.sc .pos { color: #30d158; } .sc .neg { color: #ff453a; }
+.sc .sc-chart { margin: 10px 0; } .sc .sc-svg { width: 100%; height: auto; display: block; }
+.sc .sc-grid { stroke: rgba(128, 128, 128, 0.22); stroke-width: 1; }
+.sc .sc-ax { fill: var(--muted, #8e8e93); font-size: 11px; }
+.sc .sc-roll { fill: none; stroke: #4da3ff; stroke-width: 2.2; stroke-linejoin: round; } .sc .sc-rolld { fill: #4da3ff; }
+.sc .sc-ow { fill: none; stroke: #bf5af2; stroke-width: 2; stroke-dasharray: 5 4; }
+.sc .sc-yrd { fill: #f0b440; stroke: #111; stroke-width: 1.5; } .sc .sc-yrl { fill: #f0b440; font-size: 11px; font-weight: 700; }
+.sc .sc-lg span::before { content: ""; display: inline-block; width: 14px; height: 4px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.sc .sc-lg .sc-lg-roll::before { background: #4da3ff; } .sc .sc-lg .sc-lg-yr::before { background: #f0b440; width: 9px; height: 9px; border-radius: 50%; } .sc .sc-lg .sc-lg-ow::before { background: #bf5af2; }
+.sc .sc-lg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted, #8e8e93); }
+.sc .sc-t td.sc-nm, .sc .sc-t th:first-child { position: sticky; left: 0; background: var(--card, #1c1c1e); z-index: 2; }
+.sc .sc-t th:first-child { z-index: 3; } .sc .sc-row.on td.sc-nm { background: #2a2233; }
+.sc > * { grid-column: 1 / -1; } .sc .sc-detail, .sc .sc-detail > * { max-width: 100%; }

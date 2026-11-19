@@ -162,7 +162,7 @@ const sectionsFor = (kind) => {
 const NAV = { admin: [["#/admin/clients", "people", "User Access", ["admin-clients", "admin-datasets"]]] };
 const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
 // (update 833) Stats' views, its row of pages; the one showing is ?view= in the address (Overview when there's none)
-export const STATS_VIEWS = [["full", "Player Stats"], /* (update 838: no Overview (it's on Home now); Full stats renamed) */ ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Comparisons"], ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
+export const STATS_VIEWS = [["full", "Player Stats"], /* (update 838: no Overview (it's on Home now); Full stats renamed) */ ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Comparisons"], ["scout", "Scouting"] /* (update 889) */, ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
 // (update 858) What's in the Bag and Practice & Goals are listed under Play (they're still Stats' views)
 export const PLAY_VIEWS = ["bag", "practice"];
 /** (update 858) can Stats switch from the view showing to `view` in place? Only within the same header (Stats or Play), so the header and its row of pages redraw when it changes */
