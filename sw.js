@@ -1,7 +1,7 @@
 // Offline: keeps a copy of the app itself so it opens with no signal (Data Entry on the course).
 // The page and the app's files: fresh when online, the saved copy when not. The Firebase libraries
 // (versioned, never change): the saved copy first. Data goes through Firebase, not here.
-const CACHE = "tour-analytics-v901";
+const CACHE = "tour-analytics-v902";
 self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./index.html", "./css/style.css", "./config.js"]).catch(() => {}))); });
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (e) => {
@@ -21,6 +21,9 @@ self.addEventListener("fetch", (e) => {
   }
   // the app's own files: always fresh when online (so an update never mixes old and new files); saved copy offline
   // ("no-cache": always check with the server, so an update never pairs new files with old ones)
-  e.respondWith(fetch(req, { cache: "no-cache" }).then((r) => { if (r && r.ok) caches.open(CACHE).then((c) => c.put(req, r.clone())); return r; })
+  // (update 902) scripts and styles fetched with this update's number on them, so a host's or CDN's saved copy of an older
+  // file (GitHub Pages keeps each for 10 minutes) is never served after an update
+  const fresh = new URL(req.url); if (/\.(js|css|json)$/.test(fresh.pathname)) fresh.searchParams.set("sw", CACHE);
+  e.respondWith(fetch(fresh.href, { cache: "no-cache", credentials: "same-origin" }).then((r) => { if (r && r.ok) caches.open(CACHE).then((c) => c.put(req, r.clone())); return r; })
     .catch(() => caches.match(req, { ignoreSearch: true })));
 });
