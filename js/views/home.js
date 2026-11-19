@@ -1555,7 +1555,16 @@ export async function render(main, { previewClient } = {}) {
       const ss = [...secs].filter(([, v]) => v[1] >= 8).map(([nm2, v]) => ({ nm: nm2, v: v[0] / v[1], n: v[1] })).sort((a, b) => a.v - b.v);
       if (ss.length >= 3) side.push({ h: Number(h), par, best: ss[0], worst: ss.at(-1), spread: ss.at(-1).v - ss[0].v }); }
     fw.sort((a, b) => b.pen - a.pen); side.sort((a, b) => b.spread - a.spread);
-    upHoles = { id: c.id, holes, fw, side }; drawFeed(collect());
+    // (update 914) each pin's best and worst miss as Strategy Maps' Cal's Way reads it (its own saved read, the same numbers):
+    // average score from each place, strokes to finish the hole (lower is better)
+    const num = (x) => (x == null ? null : Number(x)), cal = [];
+    for (const [h, X] of Object.entries(d.insights?.holes || {})) for (const [pid, S] of Object.entries(X?.strategy || {})) { if (pid === "*" || !S?.items) continue;
+      const bI = S.items.find((it) => it.h === "Best miss"), wI = S.items.find((it) => it.h === "Worst miss"); if (!bI || !wI) continue;
+      const bm = /miss the green, miss (.+?): ([\d.]+) \((?:only )?(\d+) samples?\)/.exec(bI.t || ""), wm = /Worst: (.+?) \(([\d.]+), (?:only )?(\d+) samples?\)/.exec(wI.t || ""); if (!bm || !wm) continue;
+      const best = { lab: bm[1], v: num(bm[2]), n: num(bm[3]) }, worst = { lab: wm[1], v: num(wm[2]), n: num(wm[3]) };
+      cal.push({ h: Number(h), pid, par: X.par || c.par?.[Number(h) - 1] || null, best, worst, spread: worst.v - best.v }); }
+    cal.sort((a, b) => b.spread - a.spread);
+    upHoles = { id: c.id, holes, fw, side, cal }; drawFeed(collect());
     loadUpRaw(c).catch((e) => console.warn("course shots", e)); }
   // (update 744) the course's own shots (every player, hole, pin and round on record there): how often the field birdies
   // and bogeys each hole (the attack / defend index), what the top 10 finishers did best, which approach distances come up
@@ -1772,12 +1781,18 @@ export async function render(main, { previewClient } = {}) {
         out.push({ id: "up-golay", hole: g.h, cid: c.id, k: null, kind: "Course", score: 4.88, title: `No. ${g.h}: ${go ? "go for it in two" : "lay up"}, ${Math.abs(g.d).toFixed(2)} strokes a hole lower`, detail: `Average score to par (lower is better). Went for the green with the second shot: ${pm3(g.ga)} (${g.go.length} players) · laid up: ${pm3(g.la)} (${g.lay.length}) · from within 300 yds${R0.goLay[1] ? ` · also No. ${R0.goLay[1].h}: ${R0.goLay[1].d > 0 ? "go for it" : "lay up"} (${Math.abs(R0.goLay[1].d).toFixed(2)})` : ""}`,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, g.h, EX.hole(`Should I go for hole ${g.h} in two?`)) }); }
       // each pin's costliest miss, described in full
-      const M = R0.misses.filter((x) => x.spread >= 0.15);
+      // (update 914) Cal's Way's own read (Strategy Maps): the pin where the worst miss costs most against the best; one hole only
+      const CW = upHoles?.id === c.id ? (upHoles.cal || []).filter((x) => x.spread >= 0.15 && x.worst.n >= 8) : [];
+      if (CW.length) { const x = CW[0], pn = R0.pinName?.(x.h, x.pid), pinT = pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : "";
+        out.push({ id: "up-side", hole: x.h, cid: c.id, k: null, kind: "Course", score: 4.9, title: `No. ${x.h}${pinT}: if you miss the green, don't miss ${x.worst.lab}`,
+          detail: `Average score on the hole from there: ${x.worst.v.toFixed(2)} (${x.worst.n} shots), against ${x.best.v.toFixed(2)} when the miss is ${x.best.lab} (${x.best.n} shots): ${x.spread.toFixed(2)} strokes a hole · lower is better · the same read as Strategy Maps' Cal's Way for this pin`,
+          to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, x.h, EX.hole(`Where should I miss on hole ${x.h}?`)) }); }
+      else {       const M = R0.misses.filter((x) => x.spread >= 0.15);
       if (M.length) { const x = M[0], M2 = M.find((m) => m.worst.h !== x.worst.h) /* (update 780: the "also" from another hole, not the same miss again) */, w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "in the fairway" : `in the ${l}`);
         const shotW = w.k === 1 ? "off the tee" : "on the approach", pinT = pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : "";
         out.push({ id: "up-side", hole: w.h, cid: c.id, k: null, kind: "Course", score: 4.9, title: `No. ${w.h}${pinT}: avoid the ${w.sec} miss ${lieW(w.lie)} ${shotW}`,
-          detail: `Players there scored ${pm3(w.avg)} to par on the hole (${w.n} shots, as if there in ${w.k}; lower is better), ${x.spread.toFixed(2)} strokes higher than the best miss, ${b.sec} ${lieW(b.lie)} (${pm3(b.avg)}, ${b.n} shots) · every shot played from within 30 yds of the green${M2 ? ` · also No. ${M2.worst.h}: avoid ${M2.worst.sec} ${lieW(M2.worst.lie)} (${pm3(M2.worst.avg)})` : ""}`,
-          to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, w.h, EX.hole(`Where should I miss on hole ${w.h}?`)) }); }
+          detail: `Players there scored ${pm3(w.avg)} to par on the hole (${w.n} shots, as if there in ${w.k}; lower is better), ${x.spread.toFixed(2)} strokes higher than the best miss, ${b.sec} ${lieW(b.lie)} (${pm3(b.avg)}, ${b.n} shots) · every shot played from within 30 yds of the green${M2 && false /* (update 914: about this hole only) */ ? ` · also No. ${M2.worst.h}: avoid ${M2.worst.sec} ${lieW(M2.worst.lie)} (${pm3(M2.worst.avg)})` : ""}`,
+          to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, w.h, EX.hole(`Where should I miss on hole ${w.h}?`)) }); } } /* (update 914: the old read, only when Cal's Way has none) */
     }
     // course form: the best there over the years (on the tour picked)
     const hist = field.map((p) => { const rs = sgRounds(rawOf(p)).filter(isU); return rs.length ? { k: p.key, rs, v: perRound(rs), yrs: new Set(rs.map(yrOf)).size } : null; }).filter(Boolean);
