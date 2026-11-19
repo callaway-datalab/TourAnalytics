@@ -22,6 +22,7 @@ const LIES = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
 const cap = (t) => String(t || "").replace(/^./, (c) => c.toUpperCase());
 // (update 760) a tournament's name as two files may spell it ("TOUR Championship" / "The Tour Championship presented by …")
 const evMatch = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || (Math.min(x.length, y.length) >= 6 && (x.includes(y) || y.includes(x)))); };
+const nameKeyOf = (s) => String(s || "").replace(/\s*\([^)]*\)\s*$/, "").toLowerCase().replace(/[^a-z\s,]/g, "").split(/[\s,]+/).filter(Boolean).sort().join(" ");
 const nameKey = (s) => String(s || "").toLowerCase().replace(/[^a-z\s,]/g, "").split(/[\s,]+/).filter(Boolean).sort().join(" ");
 
 // ---- the week from the course's shots: every player, every shot ----
@@ -85,13 +86,50 @@ export function resultsView(S, rounds, field) {
   const ev = evMap.get(st.resKey), years = [...new Set(evs.map((e) => e.year))].sort().reverse();
   const evRs = [...ev.rs].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.roundNo).localeCompare(String(b.roundNo)));
 
-  // ---- the picker ----
-  const ySel = el("select", { class: "tr-sel", "aria-label": "Year" }, years.map((y) => el("option", { value: y }, y)));
-  const eSel = el("select", { class: "tr-sel", "aria-label": "Tournament" }, evs.filter((e) => e.year === ev.year).map((e) => el("option", { value: e.key }, e.event)));
-  ySel.value = ev.year; eSel.value = ev.key;
-  ySel.addEventListener("change", () => { const e = evs.find((x) => x.year === ySel.value); if (e) { st.resKey = e.key; st.resRound = null; st.resHole = null; S.draw(); } });
-  eSel.addEventListener("change", () => { st.resKey = eSel.value; st.resRound = null; st.resHole = null; S.draw(); });
-  const picker = el("section", { class: "panel tr-pick" }, [el("p", { class: "fx-eyebrow" }, "Tournament results"), el("div", { class: "tr-pick-row" }, [ySel, eSel])]);
+  // ---- (update 918) the season at a glance, every tournament he played, and the one opened ----
+  if (!st.resYear || !(st.resYear === "all" || years.includes(st.resYear))) st.resYear = years[0];
+  const ySel = el("select", { class: "tr-sel", "aria-label": "Season" }, [...years.map((y) => el("option", { value: y }, y)), el("option", { value: "all" }, "All seasons")]);
+  ySel.value = st.resYear;
+  ySel.addEventListener("change", () => { st.resYear = ySel.value; st.resOpen = false; S.draw(); });
+  const inYr = evs.filter((e) => st.resYear === "all" || e.year === st.resYear), who = me?.label || "", whoL = String(who).replace(/\s*\([^)]*\)\s*$/, "").trim().split(/\s+/).slice(-1)[0] || "His";
+  const sumBox = el("div", { class: "tr-sum" }, el("p", { class: "muted small" }, "Loading the season…"));
+  const listBox = el("div", { class: "tr-list" });
+  const sgRd = (e) => avg(e.rs.filter((r) => !r.eventLevel), tot);
+  const drawList = (fin = new Map()) => { const pos = (e) => fin.get(e.key);
+    mount(listBox, el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t tr-evs" }, [el("thead", {}, el("tr", {}, ["Date", "Tournament", "Finish", "To par", "Rounds", "SG per round"].map((h, i) => el("th", { class: i >= 2 ? "num" : "" }, h)))),
+      el("tbody", {}, inYr.map((e) => { const o = pos(e), open = st.resOpen && st.resKey === e.key, v = sgRd(e);
+        const tr = el("tr", { class: `tr-ev${open ? " on" : ""}`, tabindex: "0", title: open ? "Close" : "Open this tournament" }, [el("td", { class: "muted" }, new Date(`${String(e.rs[0]?.date || e.end).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) })),
+          el("td", {}, [open ? "\u25BE " : "\u25B8 ", e.event]), el("td", { class: `num strong ${o?.pos === "1" ? "pos" : /^(CUT|MC|WD|DQ)$/i.test(o?.pos || "") ? "neg" : ""}` }, o?.pos ? (/^\d+$/.test(o.pos) ? ord(Number(o.pos)) : o.pos) : "—"),
+          el("td", { class: "num" }, o?.total == null ? "—" : Number(o.total) === 0 ? "E" : Number(o.total) > 0 ? `+${o.total}` : String(o.total).replace("-", "\u2212")),
+          el("td", { class: "num" }, String(new Set(e.rs.map((r) => r.roundNo)).size)), el("td", { class: `num ${cls(v)}` }, v == null ? "—" : fmtSG(v))]);
+        const go = () => { if (open) { st.resOpen = false; } else { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; } S.draw(); if (!open) requestAnimationFrame(() => document.querySelector(".tr-heroes")?.scrollIntoView({ behavior: "smooth", block: "start" })); };
+        tr.addEventListener("click", go); tr.addEventListener("keydown", (k) => { if (k.key === "Enter") go(); }); return tr; }))]))); };
+  drawList();
+  // the cards: events, cuts, wins, top 10s, average finish; and from the scorecards, contention and clutch
+  (async () => {
+    const PI = await import("./playerInsights.js"), code = PI.tourCodeOf(rs0[0]?.tour), yrs = [...new Set(inYr.map((e) => e.year))];
+    const fin = new Map(); if (code) { await PI.ensureResults(code, yrs).catch(() => null); for (const e of inYr) { const o = PI.officialSync(e.event, e.year, who, code); if (o && !o.missing) fin.set(e.key, o); } }
+    drawList(fin);
+    const n = inYr.length, posN = (e) => { const p = fin.get(e.key)?.pos; return p && /^T?\d+$/i.test(p) ? Number(String(p).replace(/^T/i, "")) : null; };
+    const missed = inYr.filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; }).length;
+    const places = inYr.map(posN).filter((v) => v != null), wins = places.filter((v) => v === 1).length, t10 = places.filter((v) => v <= 10).length;
+    const card = (label, big, sub, c0 = "") => el("div", { class: `tr-sc-card ${c0}` }, [el("span", { class: "tr-sc-l" }, label), el("b", {}, big), sub ? el("small", {}, sub) : null]);
+    const base = [card("Events", String(n), st.resYear === "all" ? "all seasons" : st.resYear), card("Cuts made", `${n - missed} of ${n}`, n ? `${Math.round((100 * (n - missed)) / n)}%` : ""), card("Wins", String(wins), wins ? "" : "\u00a0", wins ? "pos" : ""), card("Top 10s", String(t10), places.length ? `of ${places.length} with a finish` : "no official finishes"),
+      card("Average finish", places.length ? ord(Math.round(places.reduce((a, b) => a + b, 0) / places.length)) : "—", places.length ? "made cuts" : "")];
+    mount(sumBox, el("div", { class: "tr-sc-cards" }, base));
+    try { const [M0, evsC] = await Promise.all([import("./clutch.js"), PI.clutchEvents(["R", "H"], yrs.length ? yrs : years)]); const all = M0.clutchFrom(evsC), o = [...all.values()].find((x) => nameKeyOf(x.name) === nameKeyOf(who)), f = M0.clutchFmt;
+      if (o) { const cont = o.cont.filter((c) => st.resYear === "all" || c.year === st.resYear);
+        mount(sumBox, el("div", { class: "tr-sc-cards" }, [...base,
+          card("In contention", `${cont.length}×`, `within 3 of the lead into the final round · ${cont.filter((c) => c.won).length} won`),
+          card("Clutch", f(o.clutch), o.contN ? `final rounds in contention vs his usual (${o.contN})` : "not in contention yet", (o.clutch ?? 0) >= 0.005 ? "pos" : (o.clutch ?? 0) <= -0.005 ? "neg" : ""),
+          card("54-hole leads", o.leads ? `${o.leadWins} of ${o.leads}` : "—", o.leads ? "converted" : "none"),
+          card("Wins from behind", String(o.winsBehind), o.winsBehind ? `up to ${o.maxBackWon} back` : "\u00a0"),
+          o.label ? card("Type", o.label.t, o.label.why, o.label.k === "fader" ? "neg" : "pos") : null].filter(Boolean)),
+          el("p", { class: "muted small" }, "Contention and clutch from every saved scorecard (Scouting \u203a Clutch explains them)")); } } catch (e2) { console.warn("clutch", e2); }
+  })();
+  const picker = el("section", { class: "panel tr-pick" }, [el("div", { class: "tr-pick-head" }, [el("p", { class: "fx-eyebrow" }, `Tournament results${who ? ` \u00b7 ${who.replace(/\s*\([^)]*\)\s*$/, "")}` : ""}`), ySel]), sumBox,
+    el("p", { class: "fx-eyebrow tr-list-h" }, `${whoL === "His" ? "His" : `${whoL}'s`} tournaments · tap one to open it`), listBox]);
+  if (!st.resOpen) return [picker]; // (nothing opened: the season and the list only)
 
   const heroBox = el("section", { class: "panel tr-heroes" }, el("p", { class: "muted small" }, "Loading the week…"));
   const scBox = el("section", { class: "panel tr-sc" }, el("p", { class: "muted small" }, "Loading the scorecard…"));
@@ -284,5 +322,5 @@ export function resultsView(S, rounds, field) {
     mount(scBox, [el("div", { class: "tr-sc-h" }, [el("p", { class: "fx-eyebrow" }, "Scorecard"), tabs]), cardBox, holeBox]);
     drawCard(); drawHole();
   })().catch((e) => { console.warn("results", e); mount(scBox, el("p", { class: "muted small" }, `This tournament couldn’t be drawn (${e?.message || e}).`)); }); // (update 760: never a blank page)
-  return [picker, heroBox, storyBox, lbBox, scBox];
+  return [picker, heroBox, storyBox, scBox, lbBox]; // (update 918: the leaderboard below the scorecard)
 }
