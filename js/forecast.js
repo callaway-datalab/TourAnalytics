@@ -557,7 +557,11 @@ export function forecastPlayer(model, key, { chances: withChances = true } = {})
     // the place at the top and the bottom of their likely level
     const sdL = pr.sdLevel ?? pr.sd, rankHi = posAt(pr.total + 0.6745 * sdL), rankLo = posAt(pr.total - 0.6745 * sdL);
     const ch = withChances ? model.chances(key, h, pr.total, pr.sd) : { top10: null, top50: null, top100: null };
-    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 0.6745 * (pr.sdLevel ?? pr.sd), hi: pr.total + 0.6745 * (pr.sdLevel ?? pr.sd), sdSeason: pr.sd, sd: pr.sd, rank, rankExp, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100 });
+    // (update 910) the chance his season is at tour-card level on the tour picked: better than the 125th-best projected
+    // player there (wherever he plays now: a Korn Ferry or DP World player's level is on this tour's scale already)
+    const i125 = Math.max(0, Math.min(others.length - 1, Math.round(124 / Math.max(1e-6, sc)))), v125 = others[i125]?.v;
+    const cardLevel = v125 == null ? null : 1 - ncdf((v125 - pr.total) / Math.max(1e-6, pr.sd));
+    years.push({ year: String(Number(lastYear) + h), total: pr.total, ageAdd: pr.ageAdd, sigAdd: pr.sigAdd || 0, sigParts: pr.sigParts || {}, lasting: pr.lasting, temp: pr.temp, trend: pr.trend, cats: pr.cats, lo: pr.total - 0.6745 * (pr.sdLevel ?? pr.sd), hi: pr.total + 0.6745 * (pr.sdLevel ?? pr.sd), sdSeason: pr.sd, sd: pr.sd, rank, rankExp, rankHi, rankLo, of: model.seasonN, top10: ch.top10, top50: ch.top50, top100: ch.top100, cardLevel });
   }
   // (update 426) on the tour picked, raw, as the report's season table shows them (not field-adjusted), so the numbers match
   const lastS = hist.at(-1), prev = hist.slice(0, -1).slice(-3), wsum = prev.reduce((t, s) => t + s.n, 0);
