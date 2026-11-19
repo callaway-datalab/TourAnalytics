@@ -105,12 +105,18 @@ export async function scoutTab(box, key0, name0) {
   // leaderboard, fitted as a straight line on a log scale (log PGA share = a + b × log share on his tour), so "1st on the
   // Korn Ferry" maps to the PGA place such players actually reached
   const bridgeMemo = new Map();
+  // (update 912) a player's rounds in a season, every tour (for whose tour he really played that season)
+  const rdsIn = new Map(); for (const p of field) for (const r0 of p.rounds) if (hasSg0(r0) && !r0.eventLevel) { const id = `${p.key}|${PI.yrOf(r0)}`; rdsIn.set(id, (rdsIn.get(id) || 0) + 1); }
+  const roundsIn = (k, y) => rdsIn.get(`${k}|${y}`) || 0;
   function bridge(T) { if (bridgeMemo.has(T)) return bridgeMemo.get(T); let out = null;
     if (T && T !== FT) { const BT = build(T), BP = build(FT), pairs = [];
       for (const y of BT.years) for (const [k, o] of BT.season[y].by) { const nm = BT.P.find((p) => p.k === k)?.nm || k;
         const same = BP.season[y]?.by.get(k), nx = BP.season[String(Number(y) + 1)]?.by.get(k);
-        if (same) pairs.push({ k, nm, y, kind: "same", qT: o.rank / BT.season[y].of, qP: same.rank / BP.season[y].of, rT: o.rank, rP: same.rank, yP: y, w: Math.min(o.n, same.n) });
-        if (nx) pairs.push({ k, nm, y, kind: "next", qT: o.rank / BT.season[y].of, qP: nx.rank / BP.season[String(Number(y) + 1)].of, rT: o.rank, rP: nx.rank, yP: String(Number(y) + 1), w: Math.min(o.n, nx.n) }); }
+        // (update 912) a player counts as this tour's only when most of his rounds that season were here; one on both tours in
+        // the same season counts only with 30+ rounds on each (Rory McIlroy's few DP World events don't make him a DP World player)
+        const nAll = roundsIn(k, y), mostHere = o.n * 2 > nAll;
+        if (same && !(o.n >= 30 && same.n >= 30)) { /* too few on one of them */ } else if (same) pairs.push({ k, nm, y, kind: "same", qT: o.rank / BT.season[y].of, qP: same.rank / BP.season[y].of, rT: o.rank, rP: same.rank, yP: y, w: Math.min(o.n, same.n) });
+        if (nx && mostHere) pairs.push({ k, nm, y, kind: "next", qT: o.rank / BT.season[y].of, qP: nx.rank / BP.season[String(Number(y) + 1)].of, rT: o.rank, rP: nx.rank, yP: String(Number(y) + 1), w: Math.min(o.n, nx.n) }); }
       const nP = Math.round(BP.season[BP.years.filter((y) => y !== BP.lastY).at(-1) || BP.lastY]?.of || 0), nT = Math.round(BT.season[BT.years.filter((y) => y !== BT.lastY).at(-1) || BT.lastY]?.of || 0);
       let a = 0, b = 1, fit = "none";
       if (pairs.length >= 8) { let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0; for (const q of pairs) { const x = Math.log(q.qT), y0 = Math.log(q.qP), w = q.w; sw += w; sx += w * x; sy += w * y0; sxx += w * x * x; sxy += w * x * y0; }
@@ -297,7 +303,7 @@ export async function scoutTab(box, key0, name0) {
     function drawHow() {
       const f = M.fit;
       const others = tours.filter((T) => T !== FT), FC0 = ensureFc();
-      const bridgeCard = card("How the tours compare (from players who crossed)", "#64d2ff", [el("p", {}, `For each tour: every player ranked on it one season and on the PGA Tour the next, or on both in the same season. Where they landed on the PGA gives the PGA equivalent of a place on that tour. "The forecaster says" is the PGA place the forecaster predicts next season for players at that place now, a check that the two agree.`),
+      const bridgeCard = card("How the tours compare (from players who crossed)", "#64d2ff", [el("p", {}, `For each tour: every player who played mostly on it one season and was ranked on the PGA Tour the next, and anyone with 30+ rounds on both in the same season. Where they landed on the PGA gives the PGA equivalent of a place on that tour. "The forecaster says" is the PGA place the forecaster predicts next season for players at that place now, a check that the two agree.`),
         ...others.map((T) => { const br = bridge(T); if (!br) return null; const nM = br.pairs.length;
           if (br.fit === "none") return el("p", { class: "muted" }, `${TS(T)}: only ${nM} player-season${nM === 1 ? "" : "s"} crossed to the PGA in the file so far: too few to say yet.`);
           const cur = build(T), cy = cur.lastY, nowList = [...(cur.season[cy]?.by || new Map())].map(([k, o]) => ({ k, rank: o.rank }));
