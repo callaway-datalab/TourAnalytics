@@ -375,19 +375,38 @@ export async function render(main) {
       fa ? `${sel.t.api ? "PGA Tour API, as of" : "Data as of"} ${new Date(fa).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} (${ago(fa)}${late ? ", may be delayed" : ""})` : null,
       navigator.onLine === false ? "offline" : null].filter(Boolean).join(" · ");
   }
+  // (update 932) the actual scores beside the strokes gained: the live feed's official leaderboard (place and total to par) and
+  // its scorecards (each round's strokes and to par, holes played so far while a round is on), matched by PGA Tour id or name
+  let SC = { id: null, rows: new Map(), names: new Map(), cards: null, par: null };
+  const nmKey = (n) => String(n || "").toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean).sort().join(" ");
+  function loadScores(t) { const id = t ? `${t.tour}|${t.event}|${t.year}` : null; if (SC.id === id) return; SC = { id, rows: new Map(), names: new Map(), cards: null, par: null }; if (!t) return;
+    (async () => { const PI = await import("../playerInsights.js"), code = PI.tourCodeOf(t.tour); if (!code) return;
+      await PI.ensureResults(code, [String(t.year)]).catch(() => null); if (SC.id !== id) return;
+      const B = PI.officialBoard(t.event, String(t.year), code); if (!B) return;
+      for (const x of B.rows) { if (x.pid) SC.rows.set(String(x.pid), x); SC.names.set(nmKey(x.name), x); }
+      const C = B.tid ? await PI.loadCards(B.tid).catch(() => null) : null; if (SC.id !== id) return;
+      if (C?.rounds) { SC.cards = C; SC.par = C.par?.every((v) => v > 0) ? C.par : null; }
+      drawBoard(); })().catch((e) => console.warn("scores", e)); }
+  const scoreOf = (r) => { const o = SC.rows.get(String(r.player_id)) || SC.names.get(nmKey(r.name)); const pid = o?.pid ? String(o.pid) : String(r.player_id);
+    const rnd = sel.view === "event" ? null : lb?.round; let rd = null;
+    if (rnd && SC.cards?.rounds?.[rnd]?.[pid]) { const h = SC.cards.rounds[rnd][pid], played = h.map((v, i) => [v, i]).filter(([v]) => v > 0);
+      if (played.length) rd = { strokes: played.reduce((t, [v]) => t + v, 0), toPar: SC.par ? played.reduce((t, [v, i]) => t + v - SC.par[i], 0) : null, holes: played.length }; }
+    return { pos: o?.pos || null, total: o?.total ?? null, rd }; };
+  const tpTxt = (v) => (v == null ? "\u2013" : Number(v) === 0 ? "E" : Number(v) > 0 ? `+${v}` : `\u2212${-v}`);
   function drawBoard(scrollToSel) {
-    drawMeta();
+    drawMeta(); loadScores(sel.t);
     if (loadErr) { mount(boardWrap, el("p", { class: "lv-msg lv-err" }, loadErr)); return; }
     if (!lb || !lb.rows.length) { mount(boardWrap, el("p", { class: "muted lv-msg" }, lb?.note || "No data yet.")); return; }
     const keepTop = boardWrap.scrollTop, keepLeft = boardWrap.scrollLeft;
     const k = valKey(), cols = columns();
     if (!cols.some((c) => c.key === sortKey) && cols.length) sortKey = cols[0].key;
-    const get = (r) => getVal(r, sortKey, k);
+    const get = (r) => (sortKey === "SCORE" ? (() => { const o = scoreOf(r); return sel.view === "event" || !o.rd ? (o.total ?? null) : o.rd.toPar ?? o.rd.strokes; })() : getVal(r, sortKey, k)); // (update 932: by score too)
     const rows = [...lb.rows].sort((a, b) => { const x = get(a), y = get(b); if (x == null && y == null) return a.name.localeCompare(b.name); if (x == null) return 1; if (y == null) return -1; return (x - y) * sortDir || a.name.localeCompare(b.name); });
     const vals = rows.map(get), rankNum = [], tally = {}; // ties share a place: T3, T3, 5
     vals.forEach((v, i) => { rankNum[i] = v == null ? null : i > 0 && vals[i - 1] != null && Math.abs(vals[i - 1] - v) < 1e-9 ? rankNum[i - 1] : i + 1; if (rankNum[i] != null) tally[rankNum[i]] = (tally[rankNum[i]] || 0) + 1; });
     const place = (i) => (rankNum[i] == null ? "–" : tally[rankNum[i]] > 1 ? `T${rankNum[i]}` : String(rankNum[i]));
-    const heads = () => [["#"], ["Player"], ...cols.map((c) => [c.label, c.key, c.tip, c.lower]), ...(sel.view === "event" && isOn("RDS") ? [["RDS"]] : [])].map(([label, key, tip, lower]) => {
+    const hasScore = SC.rows.size > 0 || !!SC.cards;
+    const heads = () => [["#"], ["Player"], ...(hasScore ? [[sel.view === "event" ? "Score" : `R${lb?.round || ""} score`, "SCORE", sel.view === "event" ? "Total to par, with the official place (the live feed's official leaderboard)" : "The round's strokes, and to par (holes played so far while the round is on)", true]] : []), ...cols.map((c) => [c.label, c.key, c.tip, c.lower]), ...(sel.view === "event" && isOn("RDS") ? [["RDS"]] : [])].map(([label, key, tip, lower]) => {
       const on = key && key === sortKey;
       const short = { TOTAL: "Total", OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT", T2G: "T2G" }[key]; // (update 284: short headings on a phone)
       const th = el("th", { title: tip || (short ? label : null), class: key ? "lv-sort" : null, "aria-sort": on ? (sortDir < 0 ? "descending" : "ascending") : null, tabindex: key ? "0" : null }, [...(short ? [el("span", { class: "lv-h-full" }, label), el("span", { class: "lv-h-short" }, short)] : [label]), on ? el("span", { class: "lv-arrow", "aria-hidden": "true" }, sortDir < 0 ? " ▼" : " ▲") : null]);
@@ -417,7 +436,10 @@ export async function render(main) {
       const fav = isFav(r.name);
       const star = el("button", { type: "button", class: `lv-star${fav ? " on" : ""}`, "aria-pressed": String(fav), "aria-label": `${fav ? "Remove" : "Add"} ${r.name} ${fav ? "from" : "to"} favorites`, title: fav ? "Favorite (tap to remove)" : "Add to favorites" }, fav ? "\u2605" : "\u2606");
       star.addEventListener("click", (e) => { e.stopPropagation(); toggleFav(r.name); drawBoard(); });
-      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [star, el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : doneNow(r) ? el("small", { class: "lv-thru lv-done" }, "Finished") : null]), ...cells, sel.view === "event" && isOn("RDS") ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
+      const so = hasScore ? scoreOf(r) : null, scoreTd = !hasScore ? null : sel.view === "event"
+        ? el("td", { class: "lv-score", title: so.pos ? `Official place: ${so.pos}` : null }, [el("span", { class: "lv-v" }, tpTxt(so.total)), so.pos ? el("small", { class: "lv-rk" }, so.pos) : null])
+        : el("td", { class: "lv-score" }, so.rd ? [el("span", { class: "lv-v" }, so.rd.holes === 18 ? String(so.rd.strokes) : tpTxt(so.rd.toPar)), el("small", { class: "lv-rk" }, so.rd.holes === 18 ? tpTxt(so.rd.toPar) : `thru ${so.rd.holes}`)] : el("span", { class: "lv-v" }, "\u2013"));
+      const tr = el("tr", { class: sel.player?.player_id === r.player_id ? "sel" : null, dataset: { id: r.player_id } }, [el("td", { class: "lv-pos" }, place(i)), el("td", { title: r.thru != null ? `${r.name}: round ${r.thru_round || lb.round} in progress, thru ${r.thru}` : r.name }, [star, el("span", { class: "lv-nm-full" }, r.name), el("span", { class: "lv-nm-short" }, shortName(r.name)), r.thru != null ? el("small", { class: "lv-thru" }, `thru ${r.thru}`) : doneNow(r) ? el("small", { class: "lv-thru lv-done" }, "Finished") : null]), scoreTd, ...cells, sel.view === "event" && isOn("RDS") ? el("td", { class: "muted" }, String(r.rounds ?? "–")) : null]);
       tr.addEventListener("click", () => pick({ player_id: r.player_id, name: r.name }));
       return tr;
     };

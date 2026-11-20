@@ -1469,3 +1469,6 @@ html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-colo
 /* (update 930) Rankings' "In the Field" and Historical's "Wins & Top 10s": two columns, one on a phone */
 .ti-leaders.ti-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 640px) { .ti-leaders.ti-two-col { grid-template-columns: 1fr; } }
+/* (update 932) the Event Feed's Score column: the score bold, the place (or round to par / thru) under it */
+.lv-table td.lv-score { font-weight: 700; white-space: nowrap; }
+.lv-table td.lv-score .lv-rk { font-weight: 500; }
