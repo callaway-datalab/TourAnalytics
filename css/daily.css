@@ -1523,3 +1523,4 @@ html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-colo
 .sc .sc-cmp:empty { display: none; } .sc .sc-cmp { margin: 14px 0; } .sc .sc-cmp-h { display: flex; justify-content: space-between; align-items: center; margin: 0 0 8px; }
 html[data-theme="light"] .sc .st-peak, html[data-theme="light"] .sc .sc-tile.st-peak b { color: #a07800; }
 @media (max-width: 640px) { .sc .sc-pc2-b .sc-stage { font-size: 0.7rem; padding: 1px 6px; } .sc .sc-pc2-a .sc-tick { align-self: center; } }
+@media (max-width: 640px) { .sc .ip-t th, .sc .ip-t td { white-space: normal; } .sc .ip-t { font-size: 0.8rem; } }

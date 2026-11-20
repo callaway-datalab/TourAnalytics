@@ -19,7 +19,7 @@ async function inline(inp, tour, players, lite = false) {
   const fcs = players.map((p) => { const f = F.forecastPlayer(m, p.key, { chances: !lite }); if (f) f.name = p.label || f.name; return f; });
   const ok = fcs.filter(Boolean), ageAt = {};
   if (m.ageOk) for (const f of ok) if (f.age != null) { const a = m.ageCurve(f.age); ageAt[f.key] = F.FORECAST_CATS.reduce((t, c) => t + a[c], 0); }
-  return { fcs, story: F.forecastStory(m, ok), info: { target: m.target, years: m.years, lastYear: m.lastYear, params: m.params, err: m.err, outOfSample: m.outOfSample, ageOk: m.ageOk, agePlayers: m.agePlayers, fieldN: m.fieldProj[0]?.length || 0, ageAt } };
+  return { fcs, story: F.forecastStory(m, ok), info: { target: m.target, tourGap: m.tourGap, years: m.years, lastYear: m.lastYear, params: m.params, err: m.err, outOfSample: m.outOfSample, ageOk: m.ageOk, agePlayers: m.agePlayers, fieldN: m.fieldProj[0]?.length || 0, ageAt } };
 }
 export function runForecast(field, { tour = null, players = [], lite = false } = {}) { // (update 905) lite: no chances (a whole-field table)
   const x = inputOf(field), rk = `${x.id}|${tour}|${lite ? "L" : ""}|${players.map((p) => `${p.key}:${p.label}`).join(",")}`;

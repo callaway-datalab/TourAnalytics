@@ -104,6 +104,7 @@ function learn(D, { tour = null } = {}) {
   const birthT = D.players.map((p) => tOf(p.birth));
 
   /* ---------------- 1. field strength (rounds up to season `cut`) ---------------- */
+  const LINKS = [[0, 1], [-1, 0.5], [1, 0.5]]; // (update 941)
   const adjust = (cut) => {
     const NE = D.nEvents;
     const skill = new Float64Array(NP * NY * NC), cnt = new Float64Array(NP * NY * NC);
@@ -113,7 +114,10 @@ function learn(D, { tour = null } = {}) {
     for (let i = 0; i < N * NC; i++) adj[i] = D.V[i];
     for (let it = 0; it < 4; it++) {
       skill.fill(0); cnt.fill(0);
-      for (let i = 0; i < N; i++) { if (YS[i] > cut) continue; const base = (D.P[i] * NY + YS[i]) * NC; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { skill[base + c] += adj[i * NC + c]; cnt[base + c]++; } }
+      // (update 941) a player's level in a season also draws (at half weight) on his seasons either side: that's what ties a
+      // tour whose players only reach the PGA Tour the next season (the Korn Ferry Tour's graduates) to the PGA Tour's scale.
+      // With the same season only, a tour with few players on both in one season was taken as being as strong as the PGA Tour.
+      for (let i = 0; i < N; i++) { if (YS[i] > cut) continue; for (const [dy, w] of LINKS) { const y = YS[i] + dy; if (y < 0 || y > cut) continue; const base = (D.P[i] * NY + y) * NC; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { skill[base + c] += w * adj[i * NC + c]; cnt[base + c] += w; } } }
       for (let j = 0; j < skill.length; j++) if (cnt[j]) skill[j] /= cnt[j];
       str.fill(0); scnt.fill(0);
       for (let i = 0; i < N; i++) { if (YS[i] > cut) continue; const base = (D.P[i] * NY + YS[i]) * NC; for (let c = 0; c < NC; c++) if (D.M[i] & (1 << c)) { str[D.E[i] * NC + c] += skill[base + c]; scnt[D.E[i] * NC + c]++; } }
@@ -137,7 +141,9 @@ function learn(D, { tour = null } = {}) {
     const sTot = []; const seen = new Set();
     for (let i = 0; i < N; i++) { if (YS[i] > cut || YS[i] < cut - 1 || D.TO[i] !== TT || seen.has(D.E[i])) continue; seen.add(D.E[i]); let s = 0; for (let c = 0; c < NC; c++) s += str[D.E[i] * NC + c] - S0[c]; sTot.push(s); }
     sTot.sort((a, b) => a - b);
-    return { adj, spread: sTot.length ? [sTot[Math.floor(sTot.length * 0.1)], sTot[Math.floor(sTot.length * 0.9)]] : [0, 0], events: seen.size };
+    // (update 941) each tour's average field against the tour picked (its last two seasons), for the page to show
+    const tg = new Map(); { const seenE = new Set(); for (let i = 0; i < N; i++) { if (YS[i] > cut || YS[i] < cut - 1 || seenE.has(D.E[i])) continue; seenE.add(D.E[i]); let s0 = 0; for (let c = 0; c < NC; c++) s0 += str[D.E[i] * NC + c] - S0[c]; const o = tg.get(D.TO[i]) || tg.set(D.TO[i], { t: 0, n: 0 }).get(D.TO[i]); o.t += s0; o.n++; } }
+    return { adj, spread: sTot.length ? [sTot[Math.floor(sTot.length * 0.1)], sTot[Math.floor(sTot.length * 0.9)]] : [0, 0], events: seen.size, tourGap: [...tg].map(([t, o]) => ({ tour: D.tours[t], ti: t, gap: o.t / Math.max(1, o.n), events: o.n })) };
   };
 
   /* ---------------- seasons as they were (raw for show, adjusted for checks) ---------------- */
@@ -562,8 +568,17 @@ function learn(D, { tour = null } = {}) {
     return trajMemo;
   };
   const trajOf = (key) => { const p = pIndex.get(key); return p == null ? null : trajAll()[p]; };
+  // (update 941) the evidence tying each tour to the tour picked: players with 10+ rounds on both in the same or adjacent seasons
+  const tourLinks = (() => { const per = new Map(); for (let i = 0; i < N; i++) { const k = `${D.P[i]}|${YS[i]}|${D.TO[i]}`; per.set(k, (per.get(k) || 0) + 1); }
+    const has = (p, y, t) => (per.get(`${p}|${y}|${t}`) || 0) >= 10, out = new Map();
+    for (const tg0 of M.F.tourGap) { if (tg0.ti === TT) continue; let same = 0, adjN = 0; for (let p = 0; p < NP; p++) { let s1 = false, s2 = false; for (let y = 0; y < NY; y++) { if (!has(p, y, tg0.ti)) continue; if (has(p, y, TT)) s1 = true; if (has(p, y + 1, TT) || has(p, y - 1, TT)) s2 = true; } if (s1) same++; else if (s2) adjN++; }
+      out.set(tg0.tour, { same, adjacent: adjN }); } return out; })();
+  // a player's latest season on any tour, credited for the strength of its fields, ranked among the tour picked's players
+  const adjAll = seasonStats(M.F.adj, last, false), tgtTotals = rankedIn(last, adjT).map(([, s0]) => s0.cats.reduce((a, b) => a + b, 0)).sort((a, b) => b - a);
+  const eqNow = (key) => { const p = pIndex.get(key); if (p == null) return null; const s0 = adjAll.get(p * NY + last); if (!s0 || s0.n < 10 || !tgtTotals.length) return null; const v = s0.cats.reduce((a, b) => a + b, 0);
+    return { rank: 1 + tgtTotals.filter((x) => x > v).length, of: tgtTotals.length, total: v, n: s0.n }; };
   return {
-    trajOf,
+    trajOf, eqNow, tourGap: M.F.tourGap.map((x) => ({ ...x, ...(tourLinks.get(x.tour) || {}) })),
     target, years: yrs, lastYear, params, ageOk, agePlayers: params.age.players, err, outOfSample, sig2Tot, typicalN,
     project, fieldProj, seasonN, rankScale, chances, ageCurve, meanAdj, pIndex, players: D.players, rawT, adjT, NY, nowRank,
     nameOf: new Map(D.players.map((p) => [p.key, p.name])), birthOf: new Map(D.players.map((p) => [p.key, p.birth])),
@@ -628,7 +643,7 @@ export function forecastPlayer(model, key, { chances: withChances = true } = {})
   };
   const lastH = hist.at(-1);
   const now = lastH?.year === lastYear ? { ...lastH, ...(model.nowRank?.(p) || {}) } : null;
-  return { key, name: model.nameOf.get(key) || key, birth, age, now, hist, years, flags, tour: model.target, traj: model.trajOf ? model.trajOf(key) : null }; // (update 927)
+  return { key, name: model.nameOf.get(key) || key, birth, age, now, hist, years, flags, tour: model.target, traj: model.trajOf ? model.trajOf(key) : null, eqNow: model.eqNow ? model.eqNow(key) : null }; // (update 927) (update 941: eqNow)
 }
 
 /** The write-up for a few players' forecasts, in plain words (best first over the three seasons). */

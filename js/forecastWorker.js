@@ -13,6 +13,6 @@ self.onmessage = (e) => {
     const story = forecastStory(m, ok);
     const ageAt = {};
     if (m.ageOk) for (const f of ok) if (f.age != null) { const a = m.ageCurve(f.age); ageAt[f.key] = FORECAST_CATS.reduce((t, c) => t + a[c], 0); }
-    self.postMessage({ id, fcs, story, info: { target: m.target, years: m.years, lastYear: m.lastYear, params: m.params, err: m.err, outOfSample: m.outOfSample, ageOk: m.ageOk, agePlayers: m.agePlayers, fieldN: m.fieldProj[0]?.length || 0, ageAt } });
+    self.postMessage({ id, fcs, story, info: { target: m.target, tourGap: m.tourGap, years: m.years, lastYear: m.lastYear, params: m.params, err: m.err, outOfSample: m.outOfSample, ageOk: m.ageOk, agePlayers: m.agePlayers, fieldN: m.fieldProj[0]?.length || 0, ageAt } });
   } catch (err) { self.postMessage({ id, error: String(err?.message || err) }); }
 };
