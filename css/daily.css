@@ -1495,3 +1495,20 @@ html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-colo
 .tr-det .tr-det-miss { display: block; font-size: 0.8em; }
 @media (max-width: 640px) { .tr-det .tr-det-t { font-size: 0.8rem; } .tr-det .tr-det-t th, .tr-det .tr-det-t td { padding: 6px 4px; } .tr-det .tr-det-t td.tr-det-nm { min-width: 90px; } }
 @media (max-width: 640px) { .tr-det .tr-det-t { font-size: 0.74rem; } .tr-det .tr-det-t th { font-size: 0.6rem; letter-spacing: 0.02em; } .tr-det .tr-det-t th, .tr-det .tr-det-t td { padding: 5px 3px; } .tr-det .tr-det-t td.tr-det-nm { min-width: 0; } .tr-det { padding: 10px 8px; } }
+/* (update 938) Scouting on a phone: the tabs wrap, a two-line row a player, the wide tables fit, the guide folded */
+@media (max-width: 640px) {
+  .sc .sc-parts { flex-wrap: wrap !important; overflow: visible !important; gap: 6px !important; }
+  .sc .sc-parts .ip-pill { flex: 1 1 calc(50% - 6px); text-align: center; padding: 7px 8px; font-size: 0.82rem; white-space: nowrap; }
+  .sc details.sc-how summary { cursor: pointer; font-weight: 700; } .sc details.sc-how:not([open]) { padding-top: 10px; padding-bottom: 10px; }
+  .sc .sc-pcs { gap: 6px !important; }
+  .sc .sc-pc2 { display: grid; gap: 3px; padding: 9px 12px !important; text-align: left; }
+  .sc .sc-pc2-a { display: flex; align-items: baseline; gap: 6px; min-width: 0; } .sc .sc-pc2-a strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .sc .sc-pc2-a .sc-dir { margin-left: auto; white-space: nowrap; font-weight: 700; font-size: 0.86rem; }
+  .sc .sc-pc2-b { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted, #8e8e93); } .sc .sc-pc2-b b { color: var(--ink, #f2f2f7); }
+  .sc .sc-back { margin: 0 0 8px; }
+  .sc .sc-why { padding: 10px 8px; } .sc .sc-why-t { table-layout: fixed; width: 100%; font-size: 0.74rem; } .sc .sc-why-t th, .sc .sc-why-t td { padding: 5px 3px; white-space: normal !important; }
+  .sc .sc-why-t th:first-child, .sc .sc-why-t td:first-child { width: 34%; } .sc .sc-why-t th { font-size: 0.6rem; letter-spacing: 0.02em; } .sc .sc-why-t th small { font-size: 0.95em; }
+  .sc .sc-why .ip-tw { overflow-x: visible; }
+  .ol-sec .cmp-tw { overflow-x: visible; } .ol-sec .fc-t { table-layout: fixed; width: 100%; font-size: 0.7rem; } .ol-sec .fc-t th, .ol-sec .fc-t td { padding: 5px 2px; white-space: normal; }
+  .ol-sec .fc-t th:first-child, .ol-sec .fc-t td:first-child { width: 30%; } .ol-sec .fc-t .fc-sub { display: block; font-size: 0.9em; }
+}

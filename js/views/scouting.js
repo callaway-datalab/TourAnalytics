@@ -98,7 +98,7 @@ export async function scoutTab(box, key0, name0) {
   }
 
   // (update 900) phones: cards instead of wide tables, a sort menu instead of column headers
-  const mq = window.matchMedia("(max-width: 640px)"), PH = () => mq.matches; let shown = 40;
+  const mq = window.matchMedia("(max-width: 640px)"), PH = () => mq.matches; let shown = 25; // (update 938: 25 at a time on a phone)
   try { mq.addEventListener("change", () => { if (wrap.isConnected) draw(); }); } catch { /* */ }
   const lastYAll = String(Math.max(...field.flatMap((p) => p.rounds.map((r) => Number(PI.yrOf(r)) || 0))));
   const thinMap = new Map(field.map((p) => [p.key, p.rounds.filter((r) => hasSg0(r) && Number(PI.yrOf(r)) >= Number(lastYAll) - 1).length])), thinN = (k) => thinMap.get(k) || 0;
@@ -172,7 +172,7 @@ export async function scoutTab(box, key0, name0) {
     mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, ["Scouting · all tours"]), el("h2", { class: "ip-h" }, "Scouting"),
       el("p", { class: "muted" }, "How good is a player, is he getting better, and where is he likely to finish next season? Pick a player below for a plain-English report.")])),
       // (update 903) how to read it, in three lines
-      el("div", { class: "sc-how" }, [el("strong", {}, "How to read this page"), el("ul", {}, [
+      el(PH() ? "details" : "div", { class: "sc-how" }, [el(PH() ? "summary" : "strong", {}, "How to read this page"), el("ul", {}, [
         el("li", {}, [el("b", {}, "Rank now"), " = where he stands on his own tour this season (PGA, DP World or Korn Ferry) by strokes gained per round (1st is the best)."]),
         el("li", {}, [el("b", {}, "Trajectory"), ` = his strokes gained per round over the last 12 months (${W1}) against the 12 months before (${W0}). Rising or Slipping only when the change is bigger than luck explains. Open a player for where the change came from and whether it's the kind that lasts.`]),
         el("li", {}, [el("b", {}, "Next season"), " = his predicted finish on the PGA Tour, wherever he plays now (every tour's results are put on one scale by how strong its fields are)."])])]),
@@ -194,15 +194,17 @@ export async function scoutTab(box, key0, name0) {
       const note = samp(`Rank now and Path: on his own tour (PGA, DPWT or KFT), year-end rank each season (* this season so far). Trajectory: his strokes gained per round over the last 12 months (${W1}) against the 12 months before (${W0}), on his tour; the small line is the two numbers. Rising / Slipping only when the change is bigger than luck explains about 95% of the time ("Probably" past about 84%). Next season / In 3 seasons: his predicted finish on the PGA Tour, wherever he plays now (the same forecaster as the Outlook tab). Tap a player for the full report.`);
       if (PH()) {
         const sortSel = el("select", { class: "ip-sel sc-sortsel", "aria-label": "Sort by" }, SORTS.map(([k, l]) => el("option", { value: k, ...(k === sortK ? { selected: true } : {}) }, `Sort: ${l}`)));
-        sortSel.addEventListener("change", () => { sortK = sortSel.value; sortDir = 1; shown = 40; drawBoard(); });
-        const cardOf = (r) => { const sc = S(r), d = dirOf(r), rn = rankNow(r);
-          const b = el("button", { type: "button", class: `sc-pc${r.k === sel ? " on" : ""}` }, [
-            el("div", { class: "sc-pc-top" }, [el("strong", {}, r.nm), r.age != null ? el("span", { class: "muted small" }, ` ${r.age}`) : null, el("span", { class: `sc-dir dir-${d.k}`, title: trajTip(d.tr) }, d.ch != null ? `${d.t} ${sg2(d.ch)} (${sg2(d.tr.ago)} \u2192 ${sg2(d.tr.now)})` : d.t)]),
-            el("div", { class: "sc-pc-yrs" }, [el("span", {}, ["Rank now ", el("b", {}, rnTxt(r))]), (() => { const f = ensureFc(tour).map.get(r.k); return f?.years?.[0] ? el("span", {}, ["Next season ", el("b", {}, `≈${ord(f.years[0].rank)}`)]) : null; })(), (() => { const f = ensureFc(tour).map.get(r.k); return f?.years?.[2] ? el("span", {}, ["In 3 seasons ", el("b", {}, `≈${ord(f.years[2].rank)}`)]) : null; })()]),
-            el("div", { class: "muted small" }, `Path: ${path(r)}`)]);
+        sortSel.addEventListener("change", () => { sortK = sortSel.value; sortDir = 1; shown = 25; drawBoard(); });
+        // (update 938) a phone: a compact row a player (name, age, trajectory; then rank now, next season, in 3 seasons)
+        const cardOf = (r) => { const d = dirOf(r), f = ensureFc(tour).map.get(r.k);
+          const arrow = d.k === "up" ? "\u25B2" : d.k === "down" ? "\u25BC" : d.k === "steady" ? "\u25CF" : "";
+          const b = el("button", { type: "button", class: `sc-pc sc-pc2${r.k === sel ? " on" : ""}` }, [
+            el("div", { class: "sc-pc2-a" }, [el("strong", {}, r.nm), r.age != null ? el("span", { class: "muted small" }, ` ${r.age}`) : null,
+              el("span", { class: `sc-dir dir-${d.k}`, title: trajTip(d.tr) }, d.ch != null ? `${arrow} ${sg2(d.ch)}` : d.t)]),
+            el("div", { class: "sc-pc2-b" }, [el("span", {}, ["Now ", el("b", {}, rnTxt(r))]), f?.years?.[0] ? el("span", {}, ["Next ", el("b", {}, `\u2248${ord(f.years[0].rank)}`)]) : null, f?.years?.[2] ? el("span", {}, ["In 3 ", el("b", {}, `\u2248${ord(f.years[2].rank)}`)]) : null])]);
           b.addEventListener("click", () => pick(r)); return b; };
         const more = list.length > shown ? el("button", { type: "button", class: "btn ghost sc-more" }, `Show more (${list.length - shown} left)`) : null;
-        more?.addEventListener("click", () => { shown += 40; drawBoard(); });
+        more?.addEventListener("click", () => { shown += 25; drawBoard(); });
         mount(boardBox, card("Every player · all tours", "#bf5af2", [sortSel, el("div", { class: "sc-pcs" }, list.slice(0, shown).map(cardOf)), more, note]));
         return; }
       const th = (k, label, cls0 = "num", title = null) => { if (!k) return el("th", { class: cls0, title }, label); const b = el("th", { class: `${cls0} sc-sort${sortK === k ? " on" : ""}`, title, tabindex: "0" }, [label, sortK === k ? (sortDir > 0 ? " ▲" : " ▼") : ""]);
@@ -244,7 +246,8 @@ export async function scoutTab(box, key0, name0) {
         ...PI.CATS.map((c) => el("td", { class: "num", title: `${PI.CATN[c]}: ${sg2(x.o.cat[c])} per round, ${ord(x.o.cr[c])}` }, [sg2(x.o.cat[c]), el("small", { class: "muted" }, ` ${ord(x.o.cr[c])}`)])),
         B.hasOw ? el("td", { class: "num" }, x.o.ow != null ? String(Math.round(x.o.ow)) : "—") : null]); });
       const det = el("details", { class: "sc-more-det" }, [el("summary", {}, "Show the details: ratings, odds and similar players"), reportCard(r)]);
-      mount(detail, [verdictCard(r), det, card(`${r.nm} · career`, "#bf5af2", [el("p", { class: "sc-chart-help" }, "Higher on the chart is better. Blue line: his rank as each season went on. Gold dot: where he finished that season (or stands now). Grey dots: his last 24 rounds (recent form)."),el("ul", { class: "ip-bul" }, bullets.map((b) => el("li", {}, b))), chart,
+      const backB = PH() ? (() => { const bb = el("button", { type: "button", class: "btn ghost small sc-back" }, "\u2191 Back to the list"); bb.addEventListener("click", () => { const bar = Math.max(0, document.querySelector(".rail")?.getBoundingClientRect().bottom || 0); window.scrollTo({ top: Math.max(0, boardBox.getBoundingClientRect().top + window.scrollY - bar - 60) }); }); return bb; })() : null; // (update 938)
+      mount(detail, [backB, verdictCard(r), det, card(`${r.nm} · career`, "#bf5af2", [el("p", { class: "sc-chart-help" }, "Higher on the chart is better. Blue line: his rank as each season went on. Gold dot: where he finished that season (or stands now). Grey dots: his last 24 rounds (recent form)."),el("ul", { class: "ip-bul" }, bullets.map((b) => el("li", {}, b))), chart,
         segs.length && PH() ? el("div", { class: "sc-pcs" }, yrPts.map((x, i) => { const prev = yrPts[i - 1]?.o, d = prev ? prev.rank - x.o.rank : null; // (update 900) phones: a card a season
           return el("div", { class: "sc-sea" }, [el("div", { class: "sc-pc-top" }, [el("strong", {}, `${x.y}${x.y === lastY ? " so far" : ""}`), el("span", {}, [el("b", {}, ord(x.o.rank)), d ? el("small", { class: d > 0 ? "pos" : "neg" }, ` ${d > 0 ? "▲" : "▼"}${Math.abs(d)}`) : null, el("span", { class: "muted small" }, ` · ${sg2(x.o.sg)} · ${x.o.n} rds`)])]),
             el("div", { class: "sc-sea-cats" }, PI.CATS.map((c) => el("span", {}, [el("small", { class: "muted" }, { OTT: "Tee", APP: "Approach", ARG: "Short game", PUTT: "Putting" }[c]), el("b", {}, sg2(x.o.cat[c])), el("small", { class: "muted" }, ord(x.o.cr[c]))])))]); }))
