@@ -1407,3 +1407,24 @@ th.bs-lastn .bs-lastn-w { position: relative; top: 4px; }
   html.kb-open .cal-head { display: none !important; }
 }
 @media (max-width: 640px) { .cal-ex { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); } }
+/* (update 925) Cal's hello folds to two lines once you tap into the box; the full one is back on phones */
+.cal-hello.folded { display: grid; gap: 4px; }
+.cal-hello-clip { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.cal-hello-more { justify-self: start; padding: 0; font-weight: 600; color: var(--gold, #d4b483); }
+/* (update 925) the leaderboard: tap a player for their scorecard, opened under their row */
+.tr-lb-wrap { container-type: inline-size; }
+.tr-lb-t tr.tr-lb-row { cursor: pointer; } .tr-lb-t tr.tr-lb-row:hover { background: rgba(255,255,255,0.04); } .tr-lb-t tr.tr-lb-row.open { background: rgba(212,180,131,0.12); }
+.tr-lb-car { color: var(--muted, #8e8e93); font-size: 0.8em; }
+.tr-lb-t tr.tr-lb-x > td { padding: 6px 0 14px !important; text-align: left; background: rgba(255,255,255,0.02); }
+.tr-sc-in { width: 100cqw; max-width: 100cqw; position: sticky; left: 0; box-sizing: border-box; padding: 4px 8px; white-space: normal; }
+.tr-sc-in .tr-sc-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tr-sc-c.flat { cursor: default; }
+.tr-sc-in .tr-hole-grid { min-width: 0; } .tr-sc-in .tr-hole-grid > * { min-width: 0; }
+.tr-sc-in table.tr-shots { display: block; overflow-x: auto; max-width: 100%; }
+@media (max-width: 520px) { .tr-sc-in table.tr-shots td, .tr-sc-in table.tr-shots th { padding: 5px 6px; font-size: 0.82rem; } }
+/* (update 925) the leaderboard's round cells aren't round buttons (they shared .tr-rd's pill look); on a phone the table fits the width */
+.tr-lb-t td.tr-rd { border: 0; border-bottom: 1px solid var(--rule, rgba(255,255,255,0.08)); border-radius: 0; background: none; font: inherit; padding: 6px 6px; cursor: inherit; }
+@media (max-width: 520px) {
+  .tr-lb-t { font-size: 0.8rem; } .tr-lb-t th, .tr-lb-t td { padding: 6px 4px; } .tr-lb-t td.tr-rd { padding: 6px 3px; }
+  .tr-lb-t tr.tr-lb-row td:nth-child(2) { max-width: 128px; overflow: hidden; text-overflow: ellipsis; }
+}

@@ -781,6 +781,7 @@ function examples(list, leader = null) {
   const last = list.length > 1 ? "Scheffler" : n.split(" ").pop(); void last;
   return ["How should I play hole 2 at Torrey Pines South, into a back left pin?", "Who's the best putter on Tour?", list.length > 1 ? "Compare Scheffler 2026 vs 2025" : "Compare my 2026 vs 2025"];
 }
+let helloFolded = false, helloOpen = false; // (update 925)
 function draw() {
   if (!panel) return;
   const log = panel.querySelector(".cal-log"), input = panel.querySelector(".cal-in"), send = panel.querySelector(".cal-send");
@@ -801,8 +802,12 @@ function draw() {
     return;
   }
   if (!chat.length) {
-    items.push(el("div", { class: "cal-msg callie" }, [el("p", { class: "cal-short" }, oneData() ? "Hi, I’m Cal. Ask me about your stats, where you rank on tour, or how products compare." : "Hi, I’m Cal. Ask me about any player’s stats, who leads the tour, or how products compare." /* (update 924: a phone's one line) */), el("p", { class: "cal-long" }, "Hi, I’m Cal,"), el("p", { class: "cal-long" }, oneData() ? "You can ask me anything about your data. For example, you could ask about your stats over a specific stretch of time, where you rank on tour in a certain category, or how two products compare." : "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare."), el("p", { class: "cal-long" }, "What would you like to know first?"),
-      el("p", { class: "muted small cal-long" }, "Every number I show is worked out from the data available on this site.")])); // (update 290)
+    // (update 925) the full hello; once you tap into the box it folds to two lines, with "Show full message" to open it again
+    const body = oneData() ? "You can ask me anything about your data. For example, you could ask about your stats over a specific stretch of time, where you rank on tour in a certain category, or how two products compare." : "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare.";
+    const more = el("button", { type: "button", class: "link small cal-hello-more" }, "Show full message"); more.addEventListener("click", () => { helloOpen = true; draw(); });
+    const fold = helloFolded && !helloOpen;
+    items.push(el("div", { class: `cal-msg callie cal-hello${fold ? " folded" : ""}` }, fold ? [el("p", { class: "cal-hello-clip" }, `Hi, I’m Cal. ${body} What would you like to know first?`), more]
+      : [el("p", {}, "Hi, I’m Cal,"), el("p", {}, body), el("p", {}, "What would you like to know first?"), el("p", { class: "muted small" }, "Every number I show is worked out from the data available on this site.")])); // (update 290)
     items.push(el("div", { class: "cal-ex" }, exList.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small" }, t); b.addEventListener("click", () => { if (!busy) ask(t); }); return b; })));
   }
   for (const m of chat) {
@@ -897,6 +902,7 @@ export async function openCallie() {
     };
     const go = async () => { if (listening) { listening = false; const l = L; L = null; stopListening(); if (l) { const t2 = await l.stop(); if (t2) input.value = t2; } } const t = input.value.trim(); if (!t || busy) return; input.value = ""; committed = ""; ask(t); };
     send.addEventListener("click", go);
+    const foldHello = () => { if (!helloFolded && !chat.length) { helloFolded = true; helloOpen = false; draw(); } }; input.addEventListener("pointerdown", foldHello); input.addEventListener("keydown", foldHello); /* (update 925: tapping in, or typing, folds the hello; the box's own focus on opening doesn't) */
     if (matchMedia("(max-width: 640px)").matches) { input.rows = 1; const grow = () => { input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight + 2, 96)}px`; }; input.addEventListener("input", grow); } /* (update 924) */
     input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
     mic?.addEventListener("click", () => {
@@ -912,7 +918,7 @@ export async function openCallie() {
     const histBtn = el("button", { type: "button", class: "link small cal-hist-btn" }, "History");
     histBtn.addEventListener("click", () => { showHist = !showHist; histBtn.textContent = showHist ? "Back" : "History"; draw(); });
     const fresh = el("button", { type: "button", class: "link small" }, "New chat");
-    fresh.addEventListener("click", () => { showHist = false; histBtn.textContent = "History"; chat.length = 0; lastPlayers = []; pending = null; resetStrategy(); busy = false; editing = -1; draw(); });
+    fresh.addEventListener("click", () => { showHist = false; histBtn.textContent = "History"; chat.length = 0; lastPlayers = []; pending = null; resetStrategy(); busy = false; editing = -1; helloFolded = false; helloOpen = false; draw(); });
     panel = el("div", { class: "cal-wrap", hidden: true }, [
       el("div", { class: "cal-back" }),
       el("section", { class: "cal", role: "dialog", "aria-modal": "true", "aria-label": "Cal, your data assistant" }, [
