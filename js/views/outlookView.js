@@ -10,6 +10,9 @@ const MAX = 4;
 const ST = { picks: null, open: new Set(), runs: new Map(), q: "" };
 /** (update 927) another page (Comparisons, Cal) asks for these players' outlook: Scouting opens on the Outlook tab with them */
 export function wantOutlook(keys) { ST.picks = [...new Set(keys)].slice(0, MAX); ST.goto = true; }
+/** (update 939) Scouting's ticked players: the comparison is for them */
+export function setPicks(keys) { const ks = [...new Set(keys)].slice(0, MAX); if (ks.join(",") !== (ST.picks || []).join(",")) ST.picks = ks; }
+export const picksNow = () => [...(ST.picks || [])];
 export function takeGoto() { const g = !!ST.goto; ST.goto = false; return g; }
 
 /** box: where it goes; players: [{ k, nm }] everyone on the page; fieldP: () => Promise(the field the forecaster uses);

@@ -467,7 +467,7 @@ export function buildOutlookReport({ field, detail = null, fcs: fcsIn, info, own
   // (update 426) a season against the ones before it, on the same numbers as the season table
   const vsTxt = (fl) => `${fl.lastYear}: ${f2(fl.lastTot)} vs. ${f2(fl.usualTot)} ${fl.usualFrom === fl.usualTo ? `in ${fl.usualFrom}` : `avg. ${fl.usualFrom}–${String(fl.usualTo).slice(2)}`} (${f2(fl.vsUsual)})`;
   // (update 433) the new forecaster's parts: their own trend, a spell that's fading, and the signals it kept
-  const SIGN = { ballSpeed: "Ball speed change", drive: "Driving distance change", puttLed: "Season led by putting", recentGap: "Last 6 months vs. lasting level", otherTours: "Other tours", rounds: "Rounds played" };
+  const SIGN = { ballSpeed: "Ball speed change", drive: "Driving distance change", puttLed: "Season led by putting", recentGap: "Last 6 months vs. lasting level", otherTours: "Other tours", rounds: "Rounds played", seasons: "Career stage (seasons on record)", youngJump: "Young player's jump" };
   const partsOf = (f, sign) => { const y1 = f.years[0], y3 = f.years.at(-1), out = [];
     if (y3.trend != null && sign * y3.trend >= 0.08) out.push(`Trend: ${sign > 0 ? "climbing" : "sliding"}, about ${f2(y3.trend)} per round by ${y3.year}`);
     for (const [k, v] of Object.entries(y1.sigParts || {})) if (sign * v >= 0.04) out.push(`${SIGN[k] || k}: ${f2(v)} per round in ${y1.year}`);

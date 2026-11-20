@@ -330,6 +330,9 @@ function learn(D, { tour = null } = {}) {
     { key: "recentGap", label: "Last 6 months vs. their weighted average" },
     { key: "otherTours", label: "Other tours (Korn Ferry etc., credited for field strength) vs. their weighted average" },
     { key: "rounds", label: "Rounds played (latest season)" },
+    // (update 939) career stage: is a player still on the way up? Kept only if they make past seasons' forecasts better
+    { key: "seasons", label: "Seasons on record (career stage: few seasons, more room to grow)" },
+    { key: "youngJump", label: "A young player's latest season above his weighted average (how much of a young player's jump lasts)" },
   ];
   const endOfCut = new Map();
   const sigOf = (Mx, p) => {
@@ -352,7 +355,12 @@ function learn(D, { tour = null } = {}) {
       if (D.TO[i] !== TT) { oN++; oT += tot; }
     }
     const chg = (x) => (x[0][1] >= 5 && x[1][1] >= 5 ? x[0][0] / x[0][1] - x[1][0] / x[1][1] : NaN);
-    const z = [chg(bs), chg(dd), n >= 10 ? ct[3] / n - (ct[0] + ct[1] + ct[2]) / n / 3 : NaN, rN >= 8 ? rT / rN - level : NaN, oN >= 4 ? (oT / oN - level) * (oN / n) : 0, Math.log1p(n)];
+    // (update 939) seasons on record up to the cut (10+ rounds), and a young player's latest season against his level
+    const sy = new Set(); { const cnt = new Map(); for (let i = a; i < b; i++) if (YS[i] <= cut) cnt.set(YS[i], (cnt.get(YS[i]) || 0) + 1); for (const [y, c0] of cnt) if (c0 >= 10) sy.add(y); }
+    const ageEnd = Number.isFinite(birthT[p]) ? tEnd - birthT[p] : NaN, youth = Number.isFinite(ageEnd) ? Math.max(0, Math.min(1, (30 - ageEnd) / 8)) : NaN;
+    const lastLvl = n >= 10 ? ct.reduce((x, y) => x + y, 0) / n : NaN;
+    const z = [chg(bs), chg(dd), n >= 10 ? ct[3] / n - (ct[0] + ct[1] + ct[2]) / n / 3 : NaN, rN >= 8 ? rT / rN - level : NaN, oN >= 4 ? (oT / oN - level) * (oN / n) : 0, Math.log1p(n),
+      Math.log1p(sy.size), Number.isFinite(lastLvl) && Number.isFinite(youth) ? (lastLvl - level) * youth : NaN];
     Mx.sig.set(p, z); return z;
   };
   const sigRecs = [];

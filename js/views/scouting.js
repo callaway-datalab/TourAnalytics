@@ -16,7 +16,7 @@ import { defaultMinRounds } from "../sg.js";
 const minRule = (most) => (most >= 15 ? defaultMinRounds(most) : Math.max(1, Math.floor(most * 0.33)));
 const TS = (T) => (/korn/i.test(T) ? "KFT" : /dp|euro/i.test(T) ? "DPWT" : /pga/i.test(T) ? "PGA" : T);
 const MINTXT = "a third as many rounds as the busiest player or more (as on Player Stats)";
-import { outlookTab, takeGoto } from "./outlookView.js"; // (update 927) Future Outlook, moved here from Comparisons
+import { outlookTab, takeGoto, setPicks, picksNow } from "./outlookView.js"; // (update 927) Future Outlook, moved here from Comparisons
 import { scoutModel } from "../scoutModel.js"; // (update 890) comps, grades, tier odds, risers
 
 const ROLL = 24, DAY = 864e5, YEAR = 365 * DAY;
@@ -43,7 +43,9 @@ export async function scoutTab(box, key0, name0) {
   const FT = tours.find((t) => /^pga( tour)?$/i.test(String(t).trim())) || tours.find((t) => /pga/i.test(t)) || tours[0];
   if (key0 && mainTour.get(key0)) tour = mainTour.get(key0);
   let sel = key0, sortK = "rank", sortDir = 1, q = "", minSeasons = 1, part = "board";
-  if (takeGoto()) part = "outlook"; // (update 927: sent here for Future Outlook)
+  // (update 939) the players ticked to compare (up to 4), and whether the comparison is open
+  const cmpSet = new Set(); let cmpOpen = false;
+  if (takeGoto()) { part = "board"; cmpOpen = true; for (const k of picksNow()) cmpSet.add(k); } // (sent here for Future Outlook)
   const memo = new Map(), mMemo = new Map(), modelOf = (T) => mMemo.get(T) || mMemo.set(T, scoutModel(build(T))).get(T);
   // (update 905) the projections: the site's one forecaster (forecast.js, as Comparisons' Future Outlook), for every player
   // on the tour (the next three seasons' ranks), and with the chances for the player opened
@@ -156,6 +158,22 @@ export async function scoutTab(box, key0, name0) {
   // the chance luck alone moves an average this much (one-sided), in words
   const tail = (z) => { const x = Math.abs(z), t = 1 / (1 + 0.2316419 * x); return 0.3989423 * Math.exp(-x * x / 2) * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); }; // (the normal curve beyond z)
   const luckTxt = (z) => { const pp = tail(z); return pp < 0.001 ? "less than 1 time in 1,000" : pp < 0.45 ? `about 1 time in ${Math.max(2, Math.round(1 / pp)).toLocaleString()}` : "easily"; };
+  // (update 939) career stage, in plain words, from things anyone can check: his age, how many seasons he's been ranked on
+  // his tour, his best full season, and his last 12 months against it
+  const stMemo = new Map();
+  const stageOf = (r0) => { if (stMemo.has(r0.k)) return stMemo.get(r0.k); const tj = trajOf(r0.k); let out = null;
+    if (tj) { const T0 = r0.T || tj.T || mainTour.get(r0.k) || tour, B0 = build(T0), seas = B0.years.map((y) => [y, B0.season[y].by.get(r0.k)]).filter(([, o]) => o), n = seas.length, age = r0.age;
+      const full = seas.filter(([y]) => y !== B0.lastY), best = full.length ? full.reduce((m, x) => (x[1].sg > m[1].sg ? x : m)) : null, now = tj.now;
+      const up = tj.k === "up" || tj.k === "up?", down = tj.k === "down" || tj.k === "down?";
+      const why = `Age ${age ?? "unknown"}, ${n} season${n === 1 ? "" : "s"} ranked on the ${TS(T0)}${best ? `; best full season ${sg2(best[1].sg)} (${best[0]})` : ""}; last 12 months ${sg2(now)}${tj.change != null ? ` (${sg2(tj.change)} on the 12 before)` : ""}`;
+      let k = "steady", t = "Steady";
+      if (n <= 2 && (age == null || age <= 29)) { k = up ? "rising" : "early"; t = up ? "Still rising" : "Early career"; }
+      else if (age != null && age <= 27 && !down && (!best || now >= best[1].sg - 0.1)) { k = "rising"; t = "Still rising"; }
+      else if (age != null && age >= 33 && (down || (best && now < best[1].sg - 0.3))) { k = "past"; t = "Past his peak"; }
+      else if (best && now >= best[1].sg - 0.15 && !down) { k = "peak"; t = up && age != null && age <= 30 ? "Still rising" : "At his peak"; if (t === "Still rising") k = "rising"; }
+      else if (best && now < best[1].sg - 0.3) { k = age != null && age >= 31 ? "past" : "below"; t = k === "past" ? "Past his peak" : "Below his best"; }
+      out = { k, t, why }; }
+    stMemo.set(r0.k, out); return out; };
   const TRJ = { up: ["▲ Rising", "up"], "up?": ["▲ Probably rising", "up"], down: ["▼ Slipping", "down"], "down?": ["▼ Probably slipping", "down"], steady: ["● Steady", "steady"], new: ["New", "none"] };
   const trajTip = (t) => (t && t.k !== "new" ? `Strokes gained per round: ${sg2(t.ago)} over ${W0} (${t.n0} rounds) → ${sg2(t.now)} over ${W1} (${t.n1} rounds) = ${sg2(t.change)}. Luck alone would move it this much ${luckTxt(t.z)}.` : t ? `Only ${t.n0} rounds in ${W0}: too few to compare. ${sg2(t.now)} per round over ${W1} (${t.n1} rounds).` : `Fewer than ${MINW} rounds in ${W1}.`);
   function pickKey(k) { sel = k; if (mainTour.get(k)) tour = mainTour.get(k); draw();
@@ -168,7 +186,12 @@ export async function scoutTab(box, key0, name0) {
     const pc = (v) => (v == null ? "—" : v < 0.005 ? "<1%" : v > 0.995 ? ">99%" : `${Math.round(v * 100)}%`);
     const gCls = (g) => (g >= 90 ? "g-hi" : g >= 70 ? "g-good" : g >= 35 ? "g-avg" : g >= 15 ? "g-low" : "g-poor"); // (update 899: 0-100)
     const gEl = (g, t = null) => el("b", { class: `sc-g ${gCls(g)}`, title: t }, String(g));
-    const detail = el("div", { class: "sc-detail" }), boardBox = el("div", {});
+    const detail = el("div", { class: "sc-detail" }), boardBox = el("div", {}), cmpBox = el("div", { class: "sc-cmp" });
+    // (update 939) the comparison: the ticked players' outlook side by side, the report pages and the PDF
+    function drawCompare() { if (part !== "board" || !cmpOpen || !cmpSet.size) { mount(cmpBox, null); return; }
+      setPicks([...cmpSet]); const head = el("div", { class: "sc-cmp-h" }, [el("b", {}, "Comparison"), (() => { const x = el("button", { type: "button", class: "btn ghost small" }, "Close"); x.addEventListener("click", () => { cmpOpen = false; drawCompare(); }); return x; })()]);
+      const inner = el("div"); mount(cmpBox, [head, inner]);
+      outlookTab(inner, { players: allRows().map((r0) => ({ k: r0.k, nm: r0.nm })), fieldP: fieldForFc, tour: FT, sel: null, redraw: () => { if (wrap.isConnected) { const ks = picksNow(); cmpSet.clear(); for (const k of ks) cmpSet.add(k); drawCompare(); } }, ownRounds: (k) => field.find((p0) => p0.key === k)?.rounds || null }); }
     mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#bf5af2" }, ["Scouting · all tours"]), el("h2", { class: "ip-h" }, "Scouting"),
       el("p", { class: "muted" }, "How good is a player, is he getting better, and where is he likely to finish next season? Pick a player below for a plain-English report.")])),
       // (update 903) how to read it, in three lines
@@ -176,8 +199,8 @@ export async function scoutTab(box, key0, name0) {
         el("li", {}, [el("b", {}, "Rank now"), " = where he stands on his own tour this season (PGA, DP World or Korn Ferry) by strokes gained per round (1st is the best)."]),
         el("li", {}, [el("b", {}, "Trajectory"), ` = his strokes gained per round over the last 12 months (${W1}) against the 12 months before (${W0}). Rising or Slipping only when the change is bigger than luck explains. Open a player for where the change came from and whether it's the kind that lasts.`]),
         el("li", {}, [el("b", {}, "Next season"), " = his predicted finish on the PGA Tour, wherever he plays now (every tour's results are put on one scale by how strong its fields are)."])])]),
-      partPills(), boardBox, detail]); // (update 928: the table first; a player's report opens below it)
-    function partPills() { return el("div", { class: "ip-pills sc-parts" }, [["board", "Every player"], ["pred", "Predictions (3 seasons)"], ["outlook", "Outlook & report"], ["risers", "Biggest improvers"], ["clutch", "Clutch"], ["how", "The math"]].map(([v, l]) => { const b = el("button", { type: "button", class: `ip-pill${v === part ? " on" : ""}`, "aria-pressed": String(v === part) }, l); b.addEventListener("click", () => { part = v; draw(); }); return b; })); }
+      partPills(), boardBox, cmpBox, detail]); // (update 928: the table first; a player's report opens below it) (update 939: the comparison between)
+    function partPills() { return el("div", { class: "ip-pills sc-parts" }, [["board", "Players"], ["clutch", "Clutch"], ["how", "The math"]] /* (update 939: one Players section: the list, a player's report, and comparisons) */.map(([v, l]) => { const b = el("button", { type: "button", class: `ip-pill${v === part ? " on" : ""}`, "aria-pressed": String(v === part) }, l); b.addEventListener("click", () => { part = v; draw(); }); return b; })); }
 
     // (update 903) the board, simply: path of year-end ranks, rank now, direction, next season's best guess, top-10 chance
     function drawBoard() {
@@ -190,32 +213,41 @@ export async function scoutTab(box, key0, name0) {
       list.sort((a, b) => { const x = val(a), y = val(b); return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir; });
       const path = (r) => { const Bt = build(r.T); return Bt.years.map((y, i) => (r.ranks[i] ? `${r.ranks[i].rank}${y === Bt.lastY ? "*" : ""}` : null)).filter(Boolean).join(" → ") || "—"; };
       const pick = (r) => pickKey(r.k);
-      const SORTS = [["rank", "Rank now"], ["dir", "Rising fastest"], ["next", "Next season on the PGA (best guess)"], ["t1", "In 3 seasons"], ["age", "Youngest"], ["nm", "Name"]];
-      const note = samp(`Rank now and Path: on his own tour (PGA, DPWT or KFT), year-end rank each season (* this season so far). Trajectory: his strokes gained per round over the last 12 months (${W1}) against the 12 months before (${W0}), on his tour; the small line is the two numbers. Rising / Slipping only when the change is bigger than luck explains about 95% of the time ("Probably" past about 84%). Next season / In 3 seasons: his predicted finish on the PGA Tour, wherever he plays now (the same forecaster as the Outlook tab). Tap a player for the full report.`);
+      const SORTS = [["rank", "Rank now"], ["dir", "Biggest improvers"], ["next", "Next season on the PGA (best guess)"], ["t1", "In 3 seasons"], ["age", "Youngest"], ["nm", "Name"]];
+      // (update 939) tick up to 4 to compare
+      const cmpBar = el("div", { class: "sc-cmpbar" }); const drawBar = () => { const n = cmpSet.size, go = el("button", { type: "button", class: "btn small", disabled: n ? null : true }, n ? `Compare ${n} player${n === 1 ? "" : "s"}` : "Compare");
+        go.addEventListener("click", () => { cmpOpen = true; drawCompare(); requestAnimationFrame(() => { const bar = Math.max(0, document.querySelector(".rail")?.getBoundingClientRect().bottom || 0); window.scrollTo({ top: Math.max(0, cmpBox.getBoundingClientRect().top + window.scrollY - bar - 10), behavior: "smooth" }); }); });
+        const clr = n ? (() => { const c = el("button", { type: "button", class: "link small" }, "Clear"); c.addEventListener("click", () => { cmpSet.clear(); cmpOpen = false; drawBoard(); drawCompare(); }); return c; })() : null;
+        mount(cmpBar, [el("span", { class: "muted small" }, n ? `${[...cmpSet].map((k) => lastName(allRows().find((x) => x.k === k)?.nm || k)).join(", ")} ticked (up to 4)` : "Tick up to 4 players to compare them side by side and make a PDF report"), go, clr]); };
+      drawBar();
+      const tick = (r0) => { const c = el("input", { type: "checkbox", class: "sc-tick", "aria-label": `Compare ${r0.nm}`, ...(cmpSet.has(r0.k) ? { checked: true } : {}) });
+        c.addEventListener("click", (e) => { e.stopPropagation(); if (c.checked) { if (cmpSet.size >= 4) { c.checked = false; return; } cmpSet.add(r0.k); } else cmpSet.delete(r0.k); drawBar(); if (cmpOpen) drawCompare(); }); return c; };
+      const stg = (r0) => { const g = stageOf(r0); return g ? el("span", { class: `sc-stage st-${g.k}`, title: g.why }, g.t) : el("span", { class: "muted" }, "\u2014"); };
+      const note = samp(`Rank now: on his own tour (PGA, DPWT or KFT) this season. Career stage: from his age, his seasons on record and how the last 12 months compare with his best season. Trajectory: his strokes gained per round over the last 12 months (${W1}) against the 12 months before (${W0}), on his tour; the small line is the two numbers. Rising / Slipping only when the change is bigger than luck explains about 95% of the time ("Probably" past about 84%). Next season / In 3 seasons: his predicted finish on the PGA Tour, wherever he plays now (the same forecaster as Compare). Tap a player for the full report.`);
       if (PH()) {
         const sortSel = el("select", { class: "ip-sel sc-sortsel", "aria-label": "Sort by" }, SORTS.map(([k, l]) => el("option", { value: k, ...(k === sortK ? { selected: true } : {}) }, `Sort: ${l}`)));
         sortSel.addEventListener("change", () => { sortK = sortSel.value; sortDir = 1; shown = 25; drawBoard(); });
         // (update 938) a phone: a compact row a player (name, age, trajectory; then rank now, next season, in 3 seasons)
         const cardOf = (r) => { const d = dirOf(r), f = ensureFc(tour).map.get(r.k);
           const arrow = d.k === "up" ? "\u25B2" : d.k === "down" ? "\u25BC" : d.k === "steady" ? "\u25CF" : "";
-          const b = el("button", { type: "button", class: `sc-pc sc-pc2${r.k === sel ? " on" : ""}` }, [
-            el("div", { class: "sc-pc2-a" }, [el("strong", {}, r.nm), r.age != null ? el("span", { class: "muted small" }, ` ${r.age}`) : null,
+          const b = el("div", { role: "button", tabindex: "0", class: `sc-pc sc-pc2${r.k === sel ? " on" : ""}` }, [
+            el("div", { class: "sc-pc2-a" }, [tick(r), el("strong", {}, r.nm), r.age != null ? el("span", { class: "muted small" }, ` ${r.age}`) : null,
               el("span", { class: `sc-dir dir-${d.k}`, title: trajTip(d.tr) }, d.ch != null ? `${arrow} ${sg2(d.ch)}` : d.t)]),
-            el("div", { class: "sc-pc2-b" }, [el("span", {}, ["Now ", el("b", {}, rnTxt(r))]), f?.years?.[0] ? el("span", {}, ["Next ", el("b", {}, `\u2248${ord(f.years[0].rank)}`)]) : null, f?.years?.[2] ? el("span", {}, ["In 3 ", el("b", {}, `\u2248${ord(f.years[2].rank)}`)]) : null])]);
-          b.addEventListener("click", () => pick(r)); return b; };
+            el("div", { class: "sc-pc2-b" }, [stg(r), el("span", {}, ["Now ", el("b", {}, rnTxt(r))]), f?.years?.[0] ? el("span", {}, ["Next ", el("b", {}, `\u2248${ord(f.years[0].rank)}`)]) : null, f?.years?.[2] ? el("span", {}, ["In 3 ", el("b", {}, `\u2248${ord(f.years[2].rank)}`)]) : null])]);
+          b.addEventListener("click", () => pick(r)); b.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(r); }); return b; };
         const more = list.length > shown ? el("button", { type: "button", class: "btn ghost sc-more" }, `Show more (${list.length - shown} left)`) : null;
         more?.addEventListener("click", () => { shown += 25; drawBoard(); });
-        mount(boardBox, card("Every player · all tours", "#bf5af2", [sortSel, el("div", { class: "sc-pcs" }, list.slice(0, shown).map(cardOf)), more, note]));
+        mount(boardBox, card("Players · all tours", "#bf5af2", [cmpBar, sortSel, el("div", { class: "sc-pcs" }, list.slice(0, shown).map(cardOf)), more, note]));
         return; }
       const th = (k, label, cls0 = "num", title = null) => { if (!k) return el("th", { class: cls0, title }, label); const b = el("th", { class: `${cls0} sc-sort${sortK === k ? " on" : ""}`, title, tabindex: "0" }, [label, sortK === k ? (sortDir > 0 ? " ▲" : " ▼") : ""]);
         const go = () => { if (sortK === k) sortDir = -sortDir; else { sortK = k; sortDir = 1; } drawBoard(); }; b.addEventListener("click", go); b.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); return b; };
       const rows = list.slice(0, 300).map((r) => { const sc = S(r), d = dirOf(r), rn = rankNow(r);
-        const tr = el("tr", { class: `sc-row${r.k === sel ? " on" : ""}`, tabindex: "0" }, [el("td", { class: "sc-nm" }, r.nm), el("td", { class: "num" }, r.age ?? "—"), el("td", { class: "sc-path" }, path(r)),
+        const tr = el("tr", { class: `sc-row${r.k === sel ? " on" : ""}`, tabindex: "0" }, [el("td", { class: "sc-tk" }, tick(r)), el("td", { class: "sc-nm" }, r.nm), el("td", { class: "num" }, r.age ?? "—"), el("td", {}, stg(r)),
           el("td", { class: "num strong" }, (() => { const n = rankNow(r); if (!n) return "\u2014"; const e = r.T !== FT ? pgaEq(r.T, n, S(r)?.cur.of) : null; return [`${ord(n)} ${TS(r.T)}`, e ? el("small", { class: "sc-sub" }, `\u2248${ord(e)} PGA`) : null]; })()), el("td", { class: `sc-dir dir-${d.k}`, title: trajTip(d.tr) }, d.ch != null ? [`${d.t} ${sg2(d.ch)}`, el("small", { class: "sc-sub" }, `${sg2(d.tr.ago)} \u2192 ${sg2(d.tr.now)}`)] : d.t),
           el("td", { class: "num" }, (() => { const f = ensureFc(tour).map.get(r.k); return f?.years?.[0] ? `≈${ord(f.years[0].rank)}` : ensureFc(tour).busy ? "…" : "—"; })()), el("td", { class: "num" }, (() => { const f = ensureFc(tour).map.get(r.k); return f?.years?.[2] ? `≈${ord(f.years[2].rank)}` : ensureFc(tour).busy ? "…" : "—"; })())]);
         tr.addEventListener("click", () => pick(r)); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(r); }); return tr; });
-      mount(boardBox, card("Every player · all tours", "#bf5af2", [
-        el("div", { class: "ip-tw sc-tw" }, el("table", { class: "ip-t sc-t" }, [el("thead", {}, el("tr", {}, [th("nm", "Player", ""), th("age", "Age"), th(null, "Path (year-end ranks)", "", "Each season's year-end rank, oldest first (* this season so far)"),
+      mount(boardBox, card("Players · all tours", "#bf5af2", [cmpBar,
+        el("div", { class: "ip-tw sc-tw" }, el("table", { class: "ip-t sc-t" }, [el("thead", {}, el("tr", {}, [th(null, "", "sc-tk"), th("nm", "Player", ""), th("age", "Age"), th(null, "Career stage", "", "Still rising / At his peak / Past his peak: from his age, seasons on record and his best season against the last 12 months (tap a player for why)"),
           th("rank", "Rank now (his tour)"), th("dir", "Trajectory", "", `Strokes gained per round, last 12 months (${W1}) against the 12 before (${W0})`), th("next", "Next season (PGA)", "num", "Predicted finish on the PGA Tour next season"), th("t1", "In 3 seasons (PGA)", "num", "Predicted finish on the PGA Tour three seasons from now")])),
           el("tbody", {}, rows)])),
         list.length > 300 ? el("p", { class: "muted small" }, `Showing 300 of ${list.length}: sort to see others.`) : null, note]));
@@ -299,6 +331,7 @@ export async function scoutTab(box, key0, name0) {
         el("p", { class: "sc-verdict" }, `${last} is ${level} on the ${tour || "tour"} (${ord(rk)} of ${of}${so}) and is ${dirTxt}.`),
         el("div", { class: "sc-tiles" }, [
           tile("Rank now", ord(rk), `of ${of}${so}${eqP ? ` on the ${TS(tour)} · ≈${ord(eqP)} on the PGA` : ""}`),
+          (() => { const g = stageOf(r); return g ? tile("Career stage", g.t, g.why, `st-${g.k}`) : null; })(),
           tile("Trajectory", tj && tj.k !== "new" ? `${arrow} ${sg2(tj.change)}` : arrow, tj && tj.k !== "new" ? `${sg2(tj.ago)} \u2192 ${sg2(tj.now)} per round (12 months before \u2192 last 12 months)` : "", `dir-${dir}`),
           y1 ? tile(`${y1.year} on the PGA Tour (best guess)`, `≈${ord(y1.rank)}`, tour !== FT ? `likely ${ord(y1.rankHi)}–${ord(y1.rankLo)} · ${y1.cardLevel != null ? `${Math.round(y1.cardLevel * 100)}% chance of a PGA card-level season` : "if he plays there"}` : `likely ${ord(y1.rankHi)}–${ord(y1.rankLo)}`) : tile("Next season (best guess)", "…", F.busy ? "working it out" : "not enough data"),
           t10 != null ? tile("Chance of a PGA top-10 season", `${Math.round(t10 * 100)}%`, oneIn(t10)) : tile("Chance of a PGA top-10 season", "…", FU.busy ? "working it out" : "—")]),
@@ -318,12 +351,22 @@ export async function scoutTab(box, key0, name0) {
         for (const pl of B0.P) for (let i = 1; i < ys.length - 1; i++) { const cur = B0.season[ys[i]].by.get(pl.k), nx = B0.season[ys[i + 1]].by.get(pl.k); if (!cur || !nx || cur.n < 30 || nx.n < 30) continue;
           const prev = ys.slice(Math.max(0, i - 3), i).map((y) => B0.season[y].by.get(pl.k)).filter(Boolean), pn = prev.reduce((t, o) => t + o.n, 0); if (pn < 40) continue;
           const bse = prev.reduce((t, o) => t + o.sg * o.n, 0) / pn, bc = (c) => prev.reduce((t, o) => t + o.cat[c] * o.n, 0) / pn;
-          xs.push({ x: cur.sg - bse, bs: cur.cat.OTT + cur.cat.APP - bc("OTT") - bc("APP"), sh: cur.cat.ARG + cur.cat.PUTT - bc("ARG") - bc("PUTT"), y: nx.sg - bse }); } }
+          // (update 939) his age that season and how many seasons he'd been ranked before it (career stage)
+          const ageY = pl.birth ? Number(ys[i]) + 0.5 - (Date.parse(pl.birth) / (365.25 * DAY) + 1970) : null, prior = ys.slice(0, i).filter((y) => B0.season[y].by.get(pl.k)).length;
+          xs.push({ x: cur.sg - bse, bs: cur.cat.OTT + cur.cat.APP - bc("OTT") - bc("APP"), sh: cur.cat.ARG + cur.cat.PUTT - bc("ARG") - bc("PUTT"), y: nx.sg - bse, age: Number.isFinite(ageY) ? ageY : null, prior }); } }
       const S = (f) => xs.reduce((t, o) => t + f(o), 0), sxx = S((o) => o.x * o.x), keep = sxx ? Math.max(0, Math.min(1, S((o) => o.x * o.y) / sxx)) : 0;
       const a11 = S((o) => o.bs * o.bs), a12 = S((o) => o.bs * o.sh), a22 = S((o) => o.sh * o.sh), y1 = S((o) => o.bs * o.y), y2 = S((o) => o.sh * o.y), det = a11 * a22 - a12 * a12;
       let kb = null, ks = null; if (Math.abs(det) > 1e-9) { kb = (y1 * a22 - y2 * a12) / det; ks = (a11 * y2 - a12 * y1) / det; }
       const split = xs.length >= 60 && kb != null && kb >= 0 && ks >= 0 && kb <= 1.1 && ks <= 1.1;
-      return (RET = { n: xs.length, keep, kb: split ? Math.min(1, kb) : null, ks: split ? Math.min(1, ks) : null, split }); }
+      // (update 939) the same, by age and by career stage: how much of a jump stuck for young / prime / older players, and for
+      // players in their first seasons against established ones (a group needs 40+ player-seasons, else the overall share)
+      const keepOf = (g) => { const a2 = g.reduce((t, o) => t + o.x * o.x, 0); return g.length >= 40 && a2 ? { k: Math.max(0, Math.min(1.2, g.reduce((t, o) => t + o.x * o.y, 0) / a2)), n: g.length } : null; };
+      const AGE_G = [["young", "26 or younger", (a) => a <= 26.5], ["prime", "27 to 32", (a) => a > 26.5 && a < 32.5], ["older", "33 or older", (a) => a >= 32.5]];
+      const EXP_G = [["early", "in his first 3 seasons ranked", (n) => n <= 2], ["est", "with 3+ seasons ranked before", (n) => n >= 3]];
+      const byAge = Object.fromEntries(AGE_G.map(([k, l, f]) => [k, { l, ...(keepOf(xs.filter((o) => o.age != null && f(o.age))) || {}) }]));
+      const byExp = Object.fromEntries(EXP_G.map(([k, l, f]) => [k, { l, ...(keepOf(xs.filter((o) => f(o.prior))) || {}) }]));
+      return (RET = { n: xs.length, keep, kb: split ? Math.min(1, kb) : null, ks: split ? Math.min(1, ks) : null, split, byAge, byExp,
+        ageOf: (a) => (a == null ? null : a <= 26.5 ? "young" : a < 32.5 ? "prime" : "older"), expOf: (n) => (n <= 2 ? "early" : "est") }); }
     // (update 928) the numbers behind the trajectory, so anyone can check them: the two 12-month stretches side by side (the
     // same numbers the Stats page gives for those dates), whether the change is bigger than luck, which parts of the game it
     // came from, and how much of a change like it usually lasts (learned from this file by the forecaster)
@@ -358,11 +401,15 @@ export async function scoutTab(box, key0, name0) {
         if (best && tj.now > best[1].sg + 0.15) sub.push(`A career high: better than any full season on record (his best was ${sg2(best[1].sg)} in ${best[0]}). Career-best stretches usually come back toward a player's usual.`);
         else if (best && full.length >= 2 && tj.now < Math.min(...full.map((x) => x[1].sg)) - 0.15) sub.push(`A career low: worse than any full season on record. Career-worst stretches usually bounce back toward a player's usual.`);
         if (RT && RT.n >= 30) {
-          const kept = RT.split ? RT.kb * gbs + RT.ks * gsh : RT.keep * gap, guess = base + kept, pc = (v) => `${Math.round(Math.max(0, v) * 100)}%`;
+          // (update 939) his age and career stage scale the share that lasts: the groups' own shares against the overall one
+          const nPrior = seas.filter(([y]) => y !== B0.lastY).length, ga = RT.byAge[RT.ageOf(r.age)], ge = RT.byExp[RT.expOf(nPrior)];
+          const facs = [ga?.k != null && RT.keep > 0 ? ga.k / RT.keep : null, ge?.k != null && RT.keep > 0 ? ge.k / RT.keep : null].filter((v) => v != null), fac = facs.length ? Math.max(0.4, Math.min(1.8, facs.reduce((a, b) => a + b, 0) / facs.length)) : 1;
+          const kept = (RT.split ? RT.kb * gbs + RT.ks * gsh : RT.keep * gap) * fac, guess = base + kept, pc = (v) => `${Math.round(Math.max(0, v) * 100)}%`;
+          if (ga?.k != null || ge?.k != null) sub.push(`His age and career stage: ${[ga?.k != null ? `players aged ${ga.l} kept about ${pc(ga.k)} of a season's difference the next season (${ga.n} player-seasons)` : null, ge?.k != null ? `players ${ge.l} kept about ${pc(ge.k)} (${ge.n})` : null].filter(Boolean).join("; ")}, against ${pc(RT.keep)} for everyone. ${fac > 1.05 ? `So more of ${last}'s change is expected to stick than for a typical player.` : fac < 0.95 ? `So less of ${last}'s change is expected to stick than for a typical player.` : "About the same as for a typical player."}`);
           sub.push(`What happened to others: across ${RT.n.toLocaleString()} player-seasons in this file, when a season was above or below the player's usual (his previous up to 3 seasons), the next season kept on average ${RT.split ? `${pc(RT.kb)} of a ball-striking (tee and approach) difference and ${pc(RT.ks)} of a short-game (around the green and putting) difference` : `${pc(RT.keep)} of the difference`}; the rest went back toward his usual.`);
           sub.push(`Applied to ${last} (ball-striking ${sg2(gbs)}, short game ${sg2(gsh)} against his usual): about ${sg2(kept)} of the ${sg2(gap)} is likely to stay, so a fair guess for next season is about ${sg2(guess)} per round, ${Math.abs(kept) < Math.abs(gap) ? "between his usual and his last 12 months" : "about where he is now"}.`);
         } else sub.push("Too few seasons in the file yet to say how much of a change like this usually lasts.");
-        if (fc?.years?.[0]) sub.push(`The full forecast (the Outlook tab) also weighs how strong his fields were and his age: ${sg2(fc.years[0].total)} per round in ${fc.years[0].year} (≈${ord(fc.years[0].rank)} on the PGA)${rkNow ? `; ${ord(rkNow)} on the ${TS(tj.T)} this season` : ""}.`);
+        if (fc?.years?.[0]) sub.push(`The full forecast (tick him and press Compare for all of it) also weighs how strong his fields were and his age: ${sg2(fc.years[0].total)} per round in ${fc.years[0].year} (≈${ord(fc.years[0].rank)} on the PGA)${rkNow ? `; ${ord(rkNow)} on the ${TS(tj.T)} this season` : ""}.`);
       } else b3.push(`Not enough earlier rounds to compare with his usual (${pre.length} in ${winTxt(from, to)}; at least 40 needed). Treat a jump on this little history with caution.`);
       if (sub.length) b3.push(el("ul", { class: "sc-why-sub" }, sub.map((t) => el("li", {}, t))));
       return el("div", { class: "sc-why" }, [el("p", { class: "ip-kick" }, `Why "${TRJ[tj.k][0].replace(/^\S+\s/, "")}": the numbers (check them on Player Stats with these dates)`), tbl,
@@ -426,7 +473,7 @@ export async function scoutTab(box, key0, name0) {
       void bridgeCard;
       mount(boardBox, [card("How it works", "#8e8e93", [el("ol", { class: "ip-bul" }, [
         el("li", {}, [el("b", {}, "Comps (from baseball's PECOTA and FiveThirtyEight's NBA CARMELO). "), `Every player-season in the file is a profile: strokes gained per round and in each part of the game, the change from the season before, age (when the file has birth dates), seasons on the tour and rounds played. Each is put on the same scale (standard deviations across every player-season) and weighted (strokes gained per round counts most). A player's latest season is matched with the nearest past player-seasons that have a season after them. Similarity: 100 identical, 0 as different as a typical pair of players.`]),
-        el("li", {}, [el("b", {}, "Predictions (next season, three seasons out, the odds). "), "The site's one forecaster, the same as the Outlook tab, built the way baseball's projection systems (Marcel, Steamer) and Data Golf are: each player's rounds over recent seasons, newer ones weighted more (how much more is learned from this file); every round adjusted for how strong its field was (which also puts the tours on one scale); pulled toward the tour average by how many rounds there are; an age curve learned from how players' seasons changed with age; ranges set so that 8 in 10 past seasons it hadn't seen landed inside; and checked by forecasting each past season from only the seasons before it. The odds of a top-10 / 50 / 100 season come from playing the next season out thousands of times for the whole field."]),
+        el("li", {}, [el("b", {}, "Predictions (next season, three seasons out, the odds). "), "The site's one forecaster, the same as Compare, built the way baseball's projection systems (Marcel, Steamer) and Data Golf are: each player's rounds over recent seasons, newer ones weighted more (how much more is learned from this file); every round adjusted for how strong its field was (which also puts the tours on one scale); pulled toward the tour average by how many rounds there are; an age curve learned from how players' seasons changed with age; ranges set so that 8 in 10 past seasons it hadn't seen landed inside; and checked by forecasting each past season from only the seasons before it. The odds of a top-10 / 50 / 100 season come from playing the next season out thousands of times for the whole field."]),
         el("li", {}, [el("b", {}, "Ratings, 0-100. "), "The percentile: the share of the latest full season's ranked players the number beats, so 50 is the middle player, 90 the top 10% and 99 the best. Now: this season. Next season and Ceiling: the projection and a good outcome (its 80th percentile). One for each part of the game the same way. (Baseball scouts use a 20-80 scale; a percentile says the same thing in plain numbers.)"]),
         el("li", {}, [el("b", {}, "Trajectory and the biggest improvers. "), `His strokes gained per round over the last 12 months (${W1}) against the 12 months before (${W0}), on his own tour, every round in each stretch: the same numbers Player Stats gives for those dates. Rising or Slipping only when the change is bigger than luck: a tour player's score against the field swings a couple of strokes from one round to the next, so two averages of about 60 rounds can differ by around half a stroke by chance alone; the change has to clear about twice that wobble (about 95% sure) to be called, once (about 84%) for "Probably". A player's report then shows which parts of the game the change came from, and whether it's likely to last: his last 12 months against his usual over the 3 years before, whether it's a career high or low, and how much of a season's difference from a player's usual actually showed up again the next season across every player-season in this file (ball-striking and short game separately).`]),
         el("li", {}, [el("b", {}, "Before the breakout. "), "The past seasons most like a player's latest that came the year before a top-10 season (from outside the top 10): the paths successful players took."]),
@@ -484,7 +531,7 @@ export async function scoutTab(box, key0, name0) {
       const card0 = (f) => f.years[predH]?.cardLevel, thin = (f) => thinN(f.key) < 30;
       const cellY = (f, h) => [el("b", {}, ord(f.years[h].rank)), el("small", { class: "muted" }, ` ${sg2(f.years[h].total)}`)]; // (update 906: the forecaster's own place, as everywhere)
       const pick = (f) => pickKey(f.key);
-      const note = samp(`Every player on every tour, ordered by his predicted season on the PGA Tour's scale, and where that puts him on the PGA Tour's leaderboard (1st = the best predicted season), wherever he plays now. PGA card-level: the chance his season is as good as the PGA Tour's 125th-best (the level that keeps a card), a guide to whether a Korn Ferry or DP World player is ready to make it. Built by the same forecaster as the Outlook tab: recent seasons weighted most, every round adjusted for how strong its field was, pulled toward the tour average by how much data there is, and an age curve, all learned from this file and checked on seasons it hadn't seen. Each season further out is less certain. * Fewer than 30 rounds on record in the last two seasons: leans heavily on the tour average, so treat with caution.`);
+      const note = samp(`Every player on every tour, ordered by his predicted season on the PGA Tour's scale, and where that puts him on the PGA Tour's leaderboard (1st = the best predicted season), wherever he plays now. PGA card-level: the chance his season is as good as the PGA Tour's 125th-best (the level that keeps a card), a guide to whether a Korn Ferry or DP World player is ready to make it. Built by the same forecaster as Compare: recent seasons weighted most, every round adjusted for how strong its field was, pulled toward the tour average by how much data there is, and an age curve, all learned from this file and checked on seasons it hadn't seen. Each season further out is less certain. * Fewer than 30 rounds on record in the last two seasons: leans heavily on the tour average, so treat with caution.`);
       if (PH()) { mount(boardBox, card("Predicted leaderboards", "#64d2ff", [pills, el("div", { class: "sc-pcs" }, shownL.slice(0, shown).map((f) => { const b = el("button", { type: "button", class: `sc-pc${f.key === sel ? " on" : ""}` }, [
           el("div", { class: "sc-pc-top" }, [el("strong", {}, `${pos[predH].get(f.key)}. ${f.name}${thin(f) ? " *" : ""}`), f.age != null ? el("span", { class: "muted small" }, ` ${Math.floor(f.age)}`) : null, el("span", { class: "muted small" }, `now ${nowTxt(f)}`)]), card0(f) != null ? el("div", { class: "sc-pc-chips" }, [el("span", {}, ["PGA card-level ", el("b", {}, pc(card0(f)))])]) : null,
           el("div", { class: "sc-pc-yrs" }, yrs.map((y, h) => el("span", {}, [`${y} `, ...cellY(f, h)])))]); b.addEventListener("click", () => pick(f)); return b; })),
@@ -494,7 +541,8 @@ export async function scoutTab(box, key0, name0) {
           el("tbody", {}, shownL.slice(0, 300).map((f) => { const tr = el("tr", { class: `sc-row${f.key === sel ? " on" : ""}`, tabindex: "0" }, [el("td", { class: "num strong" }, String(pos[predH].get(f.key))), el("td", { class: "sc-nm" }, [f.name, thin(f) ? el("span", { class: "sc-thin", title: `Only ${thinN(f.key)} rounds on record in the last two seasons: this projection leans heavily on the tour average` }, " *") : null]), el("td", { class: "num" }, f.age != null ? String(Math.floor(f.age)) : "—"),
             el("td", { class: "num" }, nowTxt(f)), el("td", { class: "num" }, card0(f) != null ? pc(card0(f)) : "—"), ...[0, 1, 2].map((h) => el("td", { class: `num${h === predH ? " sc-predon" : ""}` }, cellY(f, h)))]); tr.addEventListener("click", () => pick(f)); void rowOf; return tr; }))])), note]));
     }
-    drawDetail(); if (part === "risers") drawRisers(); else if (part === "how") drawHow(); else if (part === "pred") drawPred(); else if (part === "clutch") drawClutch(); else if (part === "outlook") drawOutlook(); else drawBoard();
+    if (!["board", "clutch", "how"].includes(part)) part = "board";
+    drawDetail(); if (part === "how") drawHow(); else if (part === "clutch") drawClutch(); else { drawBoard(); drawCompare(); }
   }
   draw();
 }
