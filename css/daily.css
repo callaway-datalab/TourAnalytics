@@ -1527,3 +1527,11 @@ html[data-theme="light"] .sc .st-peak, html[data-theme="light"] .sc .sc-tile.st-
 /* (update 942) the career stage "starting to slip", and why next season's rank differs from now */
 .sc .st-slip { color: #ff9f0a; } .sc .sc-tile.st-slip b { color: #ff9f0a; }
 .sc .sc-rankgap { margin: 10px 0; padding: 10px 12px; border-left: 3px solid #64d2ff; background: rgba(100,210,255,0.06); border-radius: 0 10px 10px 0; line-height: 1.5; }
+/* (update 944) the Rounds and Events pop-ups' bar strip: its colours (they had none, so the bars and labels drew black) */
+.hp-stripw { margin: 6px 0 12px; } .hp-strip { display: block; width: 100%; height: auto; overflow: visible; }
+.hp-strip rect.hp-up { fill: #30d158; } .hp-strip rect.hp-down { fill: #ff453a; } .hp-strip rect.hp-gold { fill: #d4b483; }
+.hp-strip rect { opacity: 0.9; } .hp-strip rect:hover { opacity: 1; }
+.hp-strip .hp-grid { stroke: rgba(255,255,255,0.10); stroke-width: 1; } .hp-strip .hp-zero { stroke: rgba(255,255,255,0.35); stroke-width: 1; stroke-dasharray: 3 3; }
+.hp-strip .hp-tx { fill: var(--muted, #8e8e93); font-size: 11px; font-family: inherit; }
+html[data-theme="light"] .hp-strip rect.hp-up { fill: #1f9d48; } html[data-theme="light"] .hp-strip rect.hp-down { fill: #d63a2f; } html[data-theme="light"] .hp-strip rect.hp-gold { fill: #a07a3a; }
+html[data-theme="light"] .hp-strip .hp-grid { stroke: rgba(0,0,0,0.10); } html[data-theme="light"] .hp-strip .hp-zero { stroke: rgba(0,0,0,0.35); }
