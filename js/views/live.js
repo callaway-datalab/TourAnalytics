@@ -382,7 +382,7 @@ export async function render(main) {
   function loadScores(t) { const id = t ? `${t.tour}|${t.event}|${t.year}` : null; if (SC.id === id) return; SC = { id, rows: new Map(), names: new Map(), cards: null, par: null }; if (!t) return;
     (async () => { const PI = await import("../playerInsights.js"), code = PI.tourCodeOf(t.tour); if (!code) return;
       await PI.ensureResults(code, [String(t.year)]).catch(() => null); if (SC.id !== id) return;
-      const B = PI.officialBoard(t.event, String(t.year), code); if (!B) return;
+      const B = PI.officialBoard(t.event, String(t.year), code, t.end || t.start); if (!B) return;
       for (const x of B.rows) { if (x.pid) SC.rows.set(String(x.pid), x); SC.names.set(nmKey(x.name), x); }
       const C = B.tid ? await PI.loadCards(B.tid).catch(() => null) : null; if (SC.id !== id) return;
       if (C?.rounds) { SC.cards = C; SC.par = C.par?.every((v) => v > 0) ? C.par : null; }

@@ -292,7 +292,7 @@ export function historyBlocks(S, slicedField) {
       if (was) { mount(detail, null); return; }
       const tc = new Map(); for (const p of slicedField) for (const rd of p.rounds) if (rd.event === e.event && rd.tour) tc.set(rd.tour, (tc.get(rd.tour) || 0) + 1);
       const { tournamentDetail } = await import("./sgResults.js");
-      mount(detail, tournamentDetail({ event: e.event, year: e.year, tour: [...tc].sort((a, b) => b[1] - a[1])[0]?.[0] }));
+      mount(detail, tournamentDetail({ event: e.event, year: e.year, date: e.end, tour: [...tc].sort((a, b) => b[1] - a[1])[0]?.[0] }));
       requestAnimationFrame(() => { const bar = Math.max(0, document.querySelector(".rail")?.getBoundingClientRect().bottom || 0); window.scrollTo({ top: Math.max(0, detail.getBoundingClientRect().top + window.scrollY - bar - 10), behavior: "smooth" }); }); };
     tr.addEventListener("click", go); tr.addEventListener("keydown", (k) => { if (k.key === "Enter") go(); }); return [e, tr]; });
   const recap = S.panelBox("Tournaments", [el("p", { class: "muted small" }, "Tap a tournament for how it played out and its leaderboard."), el("div", { class: "table-scroll ti-events-scroll", tabindex: "0" }, el("table", { class: "plain rankings ti-events" }, [
@@ -308,7 +308,7 @@ export function historyBlocks(S, slicedField) {
     await PI.ensureResults(code, list.map((e) => String(e.year))).catch(() => null);
     const W = new Map(), T10 = new Map(); let found = 0;
     const add = (m, nm) => { const k = String(nm); m.set(k, (m.get(k) || 0) + 1); };
-    for (const e of list) { const B = PI.officialBoard(e.event, String(e.year), code), td = wCell.get(e); if (!B?.rows?.length) { mount(td, el("span", { class: "muted small", title: "The live feed hasn't saved this tournament's official leaderboard (it saves each one as it's played and marks it final two days after it ends)" }, "Not saved yet")); continue; } found++;
+    for (const e of list) { const B = PI.officialBoard(e.event, String(e.year), code, e.end), td = wCell.get(e); if (!B?.rows?.length) { mount(td, el("span", { class: "muted small", title: "The live feed hasn't saved this tournament's official leaderboard (it saves each one as it's played and marks it final two days after it ends)" }, "Not saved yet")); continue; } found++;
       const w = B.rows.find((x) => /^1$/.test(String(x.pos || "").trim())) || (B.rows.filter((x) => /^T?1$/.test(String(x.pos || "").trim())).length === 1 ? B.rows.find((x) => /^T?1$/.test(String(x.pos || "").trim())) : null);
       mount(td, w ? (B.final === false ? [who(w.name), el("small", { class: "muted" }, " (leading, not final)")] : who(w.name)) : el("span", { class: "muted small" }, B.final === false ? "Not final yet" : "\u2014"));
       if (B.final !== false) { if (w) add(W, w.name); for (const x of B.rows) { const n = Number(String(x.pos || "").replace(/^T/i, "")); if (Number.isFinite(n) && n >= 1 && n <= 10) add(T10, x.name); } } }

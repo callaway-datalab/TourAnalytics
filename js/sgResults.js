@@ -113,7 +113,7 @@ export function resultsView(S, rounds, field) {
   // the cards: events, cuts, wins, top 10s, average finish; and from the scorecards, contention and clutch
   (async () => {
     const PI = await import("./playerInsights.js"), code = PI.tourCodeOf(rs0[0]?.tour), yrs = [...new Set(inYr.map((e) => e.year))];
-    const fin = new Map(); if (code) { await PI.ensureResults(code, yrs).catch(() => null); for (const e of inYr) { const o = PI.officialSync(e.event, e.year, who, code); if (o && !o.missing) fin.set(e.key, o); } }
+    const fin = new Map(); if (code) { await PI.ensureResults(code, yrs).catch(() => null); for (const e of inYr) { const o = PI.officialSync(e.event, e.year, who, code, e.end); if (o && !o.missing) fin.set(e.key, o); } }
     drawList(fin);
     const n = inYr.length, posN = (e) => { const p = fin.get(e.key)?.pos; return p && /^T?\d+$/i.test(p) ? Number(String(p).replace(/^T/i, "")) : null; };
     const missed = inYr.filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; }).length;
@@ -219,7 +219,7 @@ export function resultsView(S, rounds, field) {
     let B = null, why = "";
     try { const PI = await import("./playerInsights.js"), code = PI.tourCodeOf(evRs[0]?.tour);
       if (!code) why = "The DP World Tour has no official leaderboard in the live feed";
-      else { await PI.ensureResults(code, [ev.year]); B = PI.officialBoard(ev.event, ev.year, code); const nEv = PI.resultsInfo(code, ev.year);
+      else { await PI.ensureResults(code, [ev.year]); B = PI.officialBoard(ev.event, ev.year, code, evRs.at(-1)?.date); const nEv = PI.resultsInfo(code, ev.year);
         why = nEv == null ? `The live feed hasn't saved any official ${code === "H" ? "Korn Ferry Tour" : "PGA TOUR"} results for ${ev.year} yet (the live-feed function from update 824 or later has to be deployed and have run)`
           : `The live feed's ${ev.year} results (${nEv} event${nEv === 1 ? "" : "s"} so far) don't include this one yet`; } } catch (e) { console.warn("leaderboard", e); why = "The official results couldn't be read just now"; }
     const par = (t) => (t == null || !Number.isFinite(Number(t)) ? "—" : Number(t) === 0 ? "E" : Number(t) > 0 ? `+${Number(t)}` : String(Number(t)).replace("-", "\u2212"));
@@ -388,13 +388,13 @@ function raceChart(S) {
 
 /** (update 933) Leaderboards › Historical: a tournament opened from the list: how it played out (from the scorecards) and the
  *  official leaderboard, each player's scorecard a tap away. */
-export function tournamentDetail({ event, year, tour }) {
+export function tournamentDetail({ event, year, tour, date = null }) {
   const box = el("div", { class: "tr-detail" }, el("p", { class: "muted small" }, "Loading the tournament…"));
   (async () => {
     const [PI, TS] = await Promise.all([import("./playerInsights.js"), import("./tourneyStory.js")]), code = PI.tourCodeOf(tour);
     if (!code) { mount(box, el("p", { class: "muted small" }, "This tour has no official leaderboards in the live feed (the PGA TOUR and Korn Ferry Tour do).")); return; }
     await PI.ensureResults(code, [String(year)]).catch(() => null);
-    const B = PI.officialBoard(event, String(year), code);
+    const B = PI.officialBoard(event, String(year), code, date);
     if (!B) { mount(box, el("p", { class: "muted small" }, `The live feed hasn't saved an official leaderboard for ${event} ${year} yet.`)); return; }
     const C = B.tid ? await PI.loadCards(B.tid).catch(() => null) : null, S = C ? TS.tourneyStory(C, B.rows) : null;
     const storyBox = el("section", { class: "panel tr-story", hidden: true }); if (S) storyInto(storyBox, S, B, { event, year: String(year) });

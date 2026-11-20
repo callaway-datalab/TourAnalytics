@@ -270,9 +270,17 @@ export const ensureFields = () => loadInto("fields.json");
 export const loadCards = (tid) => (tid ? loadInto(`results/cards/${tid}.json`).catch(() => null) : Promise.resolve(null));
 export const ensureBios = () => loadInto("bios.json");
 /** official { pos, total, name } for a player at an event in a year, or null (not loaded, not in the file, not found) */
-export function officialSync(eventName, year, playerName, code) {
+// (update 934) the event in a results file: by name, else (a renamed event: the stats file and the PGA Tour schedule call it
+// different things) by date: the one event whose days include the date given (a day either side allowed)
+function resultsEvent(R, eventName, date) {
+  const evs = Object.values(R.events), nm = matchEventName(eventName, evs.map((e) => e.name)); if (nm) return evs.find((x) => x.name === nm) || null;
+  const d = String(date || "").slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  const sh = (s, k) => { const t = Date.parse(`${String(s).slice(0, 10)}T12:00:00`); return Number.isFinite(t) ? new Date(t + k * 864e5).toISOString().slice(0, 10) : null; };
+  const hit = evs.filter((e) => e.start && sh(e.start, -1) <= d && d <= (e.end ? sh(e.end, 1) : sh(e.start, 4)) || ""); return hit.length === 1 ? hit[0] : null;
+}
+export function officialSync(eventName, year, playerName, code, date = null) {
   const R = got(`results/${code}-${year}.json`); if (!R?.events) return null;
-  const evs = Object.values(R.events), nm = matchEventName(eventName, evs.map((e) => e.name)); if (!nm) return null;
+  const e0 = resultsEvent(R, eventName, date); if (!e0) return null; const nm = e0.name, evs = Object.values(R.events);
   // (update 825) by the PGA Tour id when the player's label carries one ("Name (12345)"), else by name
   const pid = (/\((\d+)\)\s*$/.exec(String(playerName || "")) || [])[1], e = evs.find((x) => x.name === nm), k = nameKey(String(playerName || "").replace(/\s*\([^)]*\)\s*$/, ""));
   const row = (pid && e?.rows?.find((r) => String(r.pid) === pid)) || e?.rows?.find((r) => nameKey(r.name) === k);
@@ -280,10 +288,10 @@ export function officialSync(eventName, year, playerName, code) {
 }
 /** (update 836) the official leaderboard of an event in a year: { name, final, rows: [{ pid, name, pos, total }] } (the
  *  file's own order), or null (not loaded, or not in the file) */
-export function officialBoard(eventName, year, code) {
+export function officialBoard(eventName, year, code, date = null) { // (update 934: date, for a renamed event)
   const R = got(`results/${code}-${year}.json`); if (!R?.events) return null;
-  const evs = Object.values(R.events), nm = matchEventName(eventName, evs.map((e) => e.name)); if (!nm) return null;
-  const e = evs.find((x) => x.name === nm), tid = Object.keys(R.events).find((k) => R.events[k] === e); return e?.rows?.length ? { tid, name: e.name, final: e.final !== false, rows: e.rows } : null;
+  const e = resultsEvent(R, eventName, date); if (!e) return null;
+  const tid = Object.keys(R.events).find((k) => R.events[k] === e); return e?.rows?.length ? { tid, name: e.name, final: e.final !== false, rows: e.rows } : null;
 }
 /** (update 844) how many events a saved results file holds (null: no file saved for that tour and year) */
 /** (update 916) every finished event's scorecards and official board, for the clutch numbers: [{ tid, name, year, cards, board }] */
