@@ -1374,3 +1374,36 @@ html[data-theme="light"] .ib .ib-filters .ip-pill.on { background: #1c1c1e; colo
 .tr-sc-card.pos b { color: #30d158; } .tr-sc-card.neg b { color: #ff453a; }
 .tr-list-h { margin-top: 14px; } .tr-evs tr.tr-ev { cursor: pointer; } .tr-evs tr.tr-ev:hover { background: rgba(255,255,255,0.04); } .tr-evs tr.tr-ev.on { background: rgba(212,180,131,0.12); }
 @media (max-width: 520px) { .tr-evs th:nth-child(1), .tr-evs td:nth-child(1), .tr-evs th:nth-child(5), .tr-evs td:nth-child(5) { display: none; } .tr-evs td, .tr-evs th { padding-left: 6px; padding-right: 6px; } .tr-sc-cards { grid-template-columns: 1fr 1fr; } }
+/* (update 920) the form pop-up's distance table fits a phone: headers wrap, no bar column, tighter cells; the Last N header on the line of The best */
+@media (max-width: 520px) {
+  .ip-pop .ip-tw0 { overflow-x: visible; }
+  .ip-pop table.ip-fr { table-layout: auto; width: 100% !important; min-width: 0 !important; }
+  .ip-pop table.ip-fr th { white-space: normal !important; font-size: 0.62rem; letter-spacing: 0.04em; line-height: 1.25; vertical-align: bottom; padding: 6px 5px; }
+  .ip-pop table.ip-fr td { padding: 7px 5px; font-size: 0.9rem; white-space: nowrap; }
+  .ip-pop table.ip-fr th:last-child, .ip-pop table.ip-fr td.ip-frbar { display: none; }
+}
+th.bs-lastn .bs-lastn-w { position: relative; top: 4px; }
+/* (update 922) the phone's bottom bar: bigger icons (22 → 27 px; Cal 26 → 31 px) */
+@media (max-width: 640px) {
+  .botbar svg { width: 27px !important; height: 27px !important; }
+  .botbar .botbar-cal svg { width: 31px !important; height: 31px !important; }
+  .botbar > a, .botbar > button { gap: 3px; min-height: 56px; }
+}
+/* (update 924) Cal on a phone: compact (one-line hello, examples in one sliding row, a one-line box), and above the keyboard */
+.cal-short { display: none; }
+@media (max-width: 640px) {
+  .cal-short { display: block; margin: 0; } .cal-long { display: none !important; }
+  .cal { max-height: min(52vh, 440px) !important; }
+  .cal-head { padding: 6px 10px !important; } .cal-head .cal-ava.cal-ava-walk { width: 1.6rem !important; height: 2.4rem !important; }
+  .cal-ex { flex-direction: row !important; flex-wrap: nowrap; overflow-x: auto; gap: 6px !important; padding-bottom: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .cal-ex::-webkit-scrollbar { display: none; }
+  .cal-ex .cmp-chip { flex: 0 0 auto; white-space: nowrap; font-size: 0.8rem !important; padding: 6px 12px !important; }
+  .cal-foot { gap: 6px !important; padding: 6px 8px 8px !important; align-items: center !important; }
+  .cal-in { min-height: 2.2rem !important; max-height: 6rem !important; font-size: 16px !important; line-height: 1.3; padding: 0.45rem 0.85rem !important; }
+  .cal-send { min-height: 2.2rem !important; padding: 0 16px !important; }
+  .cal-mic svg { width: 34px; height: 34px; }
+  html.kb-open .botbar { display: none !important; }
+  html.kb-open .cal { max-height: none !important; border-radius: 18px !important; }
+  html.kb-open .cal-head { display: none !important; }
+}
+@media (max-width: 640px) { .cal-ex { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); } }

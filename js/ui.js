@@ -456,7 +456,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const kind = admin ? "admin" : team ? "team" : "client";
   // top bar: (Player Access,) Analyze, Play — each opens on its first page
   const secs = sectionsFor(kind), onSec = secs.find((sec) => sec.items.some((it) => itemOn(it, currentRoute)));
-  const items = [/* (update 832: User Access is in the ☰ menu) */ ["#/home", "home", "Your Report", ["home"]] /* (update 849: was Home) */ /* (update 610) */, ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
+  const items = [/* (update 832: User Access is in the ☰ menu) */ ["#/home", "home", "Home", ["home"]] /* (update 849: was Home) */ /* (update 610) */, ...secs.map((sec) => [sec.items.find((it) => !it[3]?.soon)[1], sec.icon, sec.label, sec === onSec ? [currentRoute] : []])];
   // In the admin's preview the unread count would be the admin's own inbox, so leave it off there.
   const showBadge = !(state.isAdmin && (previewClient || previewingTeam));
 
@@ -481,7 +481,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   ];
 
   // (update 816) the pages Search knows, a search button, the current player's chip, and on phones a bottom bar
-  setPages(() => [["Your Report", "#/home", "", "home today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
+  setPages(() => [["Home", "#/home", "", "home today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
 ["Comparisons", "stats:compare", "Stats", "versus side by side products compare comparisons"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
     ["Custom Practice", "stats:practice:practice", "Stats · Practice & Goals", "practice drills sessions range"], ["Recommended Practice", "stats:practice:week", "Stats · Practice & Goals", "practice week plan drills next event"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
     ["What's in the Bag", "stats:bag", "Stats", "witb clubs equipment gear bag"], ["Chat & support", state.isAdmin ? "#/admin/questions" : "#/questions", "", "report an issue question feature request help chat"], ["Profile", "#/account", "Account", "settings password"]]
@@ -499,7 +499,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const srch = (() => { const b = el("button", { type: "button", class: "botbar-search" }, [icon("search"), el("span", {}, "Search")]); b.addEventListener("click", () => openPalette()); return b; })();
   // (update 829) Home, Stats, Play, Leaderboards, Search
   const bot = el("nav", { class: "botbar", "aria-label": "Quick" }, [
-    el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("report"), el("span", {}, "Your Report")]), /* (update 849) */
+    el("a", { href: "#/home", "aria-current": currentRoute === "home" ? "page" : null }, [icon("report"), el("span", {}, "Home")]), /* (update 849) */
     ...[[data, "data"], [plan, plan?.icon || "flag"], [fol, fol?.icon || "rank"]].map(([sec, ic]) => { if (!sec) return null;
       const b = el("a", { href: sec.items[0][1], "aria-current": sec === onSec ? "page" : null, role: "button", "aria-haspopup": "true" }, [icon(ic), el("span", {}, sec.label)]);
       b.addEventListener("click", (e) => { e.preventDefault(); openBotPop(sec, b); }); return b; }),
@@ -680,7 +680,7 @@ function findSoon() {
 export function siteLinks() {
   const kind = shellKind(), admin = kind === "admin", out = [];
   if (admin) out.push({ label: "User Access", href: "#/admin/clients", section: "" }, { label: "Upload Data", href: "#/admin/datasets", section: "User Access" });
-  out.push({ label: "Your Report", href: "#/home", section: "" });
+  out.push({ label: "Home", href: "#/home", section: "" });
   for (const sec of sectionsFor(kind)) for (const it of sec.items) if (!it[3]?.off) out.push({ label: it[0], href: it[1], section: sec.label });
   out.push({ label: "WITB", href: "#/witb", section: "" }, { label: "Chat", href: admin ? "#/admin/questions" : "#/questions", section: "" }, { label: "Profile", href: "#/account", section: "" });
   return out;

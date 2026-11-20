@@ -801,8 +801,8 @@ function draw() {
     return;
   }
   if (!chat.length) {
-    items.push(el("div", { class: "cal-msg callie" }, [el("p", {}, "Hi, I’m Cal,"), el("p", {}, oneData() ? "You can ask me anything about your data. For example, you could ask about your stats over a specific stretch of time, where you rank on tour in a certain category, or how two products compare." : "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare."), el("p", {}, "What would you like to know first?"),
-      el("p", { class: "muted small" }, "Every number I show is worked out from the data available on this site.")])); // (update 290)
+    items.push(el("div", { class: "cal-msg callie" }, [el("p", { class: "cal-short" }, oneData() ? "Hi, I’m Cal. Ask me about your stats, where you rank on tour, or how products compare." : "Hi, I’m Cal. Ask me about any player’s stats, who leads the tour, or how products compare." /* (update 924: a phone's one line) */), el("p", { class: "cal-long" }, "Hi, I’m Cal,"), el("p", { class: "cal-long" }, oneData() ? "You can ask me anything about your data. For example, you could ask about your stats over a specific stretch of time, where you rank on tour in a certain category, or how two products compare." : "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare."), el("p", { class: "cal-long" }, "What would you like to know first?"),
+      el("p", { class: "muted small cal-long" }, "Every number I show is worked out from the data available on this site.")])); // (update 290)
     items.push(el("div", { class: "cal-ex" }, exList.map((t) => { const b = el("button", { type: "button", class: "cmp-chip small" }, t); b.addEventListener("click", () => { if (!busy) ask(t); }); return b; })));
   }
   for (const m of chat) {
@@ -897,6 +897,7 @@ export async function openCallie() {
     };
     const go = async () => { if (listening) { listening = false; const l = L; L = null; stopListening(); if (l) { const t2 = await l.stop(); if (t2) input.value = t2; } } const t = input.value.trim(); if (!t || busy) return; input.value = ""; committed = ""; ask(t); };
     send.addEventListener("click", go);
+    if (matchMedia("(max-width: 640px)").matches) { input.rows = 1; const grow = () => { input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight + 2, 96)}px`; }; input.addEventListener("input", grow); } /* (update 924) */
     input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
     mic?.addEventListener("click", () => {
       if (listening) { stopListening(); input.focus(); return; }
@@ -926,6 +927,7 @@ export async function openCallie() {
   }
   panel.hidden = false;
   document.documentElement.classList.add("cal-open");
+  fitToKeyboard();
   const seen = await playersYouCanSee();
   exList = examples(seen, seen.length > 1 ? await tourLeader() : null);
   draw();
@@ -1032,8 +1034,22 @@ function navAnswer(q) {
   const ask = NAV_ASK.test(t) && !/\b(take me|bring me|go to|open)\b/i.test(t);
   return { text: ask ? `That\u2019s **${page.label}**${where}.` : `Taking you to **${page.label}**${where}.`, go: { href: page.href, label: `Open ${page.label} \u2192`, nav: true }, auto: !ask };
 }
+// (update 924) a phone's keyboard: the panel sits just above it, never taller than the space left (the bottom bar hides meanwhile)
+let vvOn = false;
+function fitToKeyboard() {
+  const vv = window.visualViewport; if (!vv || vvOn) return; vvOn = true;
+  const fit = () => { if (!panel || panel.hidden) return; const box = panel.querySelector(".cal"), H = document.documentElement;
+    const kb = window.innerHeight - vv.height > 120 && matchMedia("(max-width: 640px)").matches; H.classList.toggle("kb-open", kb);
+    const set = (k, v) => (v ? box.style.setProperty(k, v, "important") : box.style.removeProperty(k)); // (the phone CSS sets these with !important)
+    if (!kb) { set("top", ""); set("bottom", ""); set("max-height", ""); return; }
+    set("max-height", `${vv.height - 16}px`); set("top", "auto"); set("bottom", `${Math.max(8, window.innerHeight - (vv.offsetTop + vv.height) + 8)}px`); }; // (anchored above the keyboard, whatever its height)
+  vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit);
+  document.addEventListener("focusin", () => setTimeout(fit, 60)); document.addEventListener("focusout", () => setTimeout(fit, 120));
+  new MutationObserver(() => requestAnimationFrame(fit)).observe(panel, { childList: true, subtree: true });
+}
 export function closeCallie() {
   if (!panel) return;
+  document.documentElement.classList.remove("kb-open");
   try { panel.querySelector(".cal-mic.on")?.click(); } catch { /* */ } // (update 593: closing stops listening)
   panel.hidden = true;
   document.documentElement.classList.remove("cal-open");

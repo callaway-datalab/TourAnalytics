@@ -676,7 +676,7 @@ export async function render(main, { previewClient } = {}) {
     if (t === "ev" && x.v != null) return el("ul", { class: "td-bul" }, [el("li", {}, `${sg2(x.v)} strokes gained total per round`), el("li", {}, `${Math.abs(x.d).toFixed(2)} ${x.d >= 0 ? "better" : "worse"} than ${isMe(h.k) ? "your" : "their"} ${x.yr} average`)]);
     return d.num ? el("p", {}, `${d.num} ${d.cap}`) : deckEl(d.deck); }
   // (update 786) a story's detail as bullet points where it has several parts (" · "), not one long paragraph
-  const formPlace = (x) => { const p = Math.round((100 * x.fRk) / x.fN); return `${x.d >= 0 ? "Biggest climb" : "Change"}: ${ord1(x.fRk)} of ${x.fN} on tour (${p <= 50 ? `top ${Math.max(1, p)}%` : `bottom ${Math.max(1, 101 - p)}%`}) · tour median ${sg2(x.fMed)}`.replace(/^Biggest climb: 1st/, "Biggest climb on tour: 1st"); };
+  const formPlace = (x) => { return `${x.d >= 0 ? "Biggest climb" : "Change"}: ${ord1(x.fRk)} of ${x.fN} on tour · tour median ${sg2(x.fMed)}`.replace(/^Biggest climb: 1st/, "Biggest climb on tour: 1st"); };
   const deckEl = (text, cls0) => { const parts = String(text || "").split(" · ").map((x0) => x0.trim()).filter(Boolean); if (!parts.length) return null;
     return parts.length > 1 ? el("ul", { class: `td-bul${cls0 ? ` ${cls0}` : ""}` }, parts.map((x0) => el("li", {}, x0.replace(/^./, (m) => m.toUpperCase())))) : el("p", { class: cls0 || null }, parts[0]); };
   const column = (h) => { const d = dress(h); return tap(el("article", { class: "td-col" }, [kicker(h, d, false), el("h3", {}, d.hl), h.hole ? chartFor(h) : null, d.num ? el("div", { class: `td-big ${d.nc}` }, d.num) : null, d.num ? el("p", {}, d.cap) : deckEl(d.deck), d.num && d.deck && !/^(fm|cm)-/.test(h.id) ? deckEl(d.deck, "td-small") : null, h.hole ? null : chartFor(h), whoTag(h), more(h)]), h); };
@@ -1245,17 +1245,17 @@ export async function render(main, { previewClient } = {}) {
     const rankIn = (list, mine, higher = true) => (list.length >= 10 && mine != null ? 1 + list.filter((x) => (higher ? x[1] > mine + 1e-9 : x[1] < mine - 1e-9)).length : null);
     const pctW = (rk, n) => { const p = Math.round((100 * rk) / n); return p <= 50 ? `top ${Math.max(1, p)}%` : `bottom ${Math.max(1, 101 - p)}%`; };
     const medOf = (list) => { const v = list.map((x) => x[1]).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
-    const ctx = (rk, n, med) => (rk ? `${ord1(rk)} of ${n} on tour (${pctW(rk, n)})${med != null ? ` · tour median ${med}` : ""}` : "");
+    const ctx = (rk, n, med) => (rk ? `${ord1(rk)} of ${n} on tour${med != null ? ` · tour median ${med}` : ""}` : "");
     const pos = S.filter((q) => q.v > 0).length, pct = Math.round((pos / S.length) * 100);
     const gl = fieldS.map(([kk, s0]) => [kk, s0.filter((q) => q.v > 0).length / s0.length]).sort((a, b) => b[1] - a[1]), gr = rankIn(gl, pos / S.length), gi = gr ? gr - 1 : -1, gMed = medOf(gl);
-    add("green", `${byEv ? "Events" : "Rounds"} in the green`, { big: `${pos} of ${S.length}`, small: `${u}s gaining strokes`, lbl: `${pct}% in ${SY}${gr ? ` · ${ord1(gr)} of ${gl.length} (${pctW(gr, gl.length)})` : ""}` },
+    add("green", `${byEv ? "Events" : "Rounds"} in the green`, { big: `${pos} of ${S.length}`, small: `${u}s gaining strokes`, lbl: `${pct}% in ${SY}${gr ? ` · ${ord1(gr)} of ${gl.length}` : ""}` },
       `${who} gained strokes in ${pos} of ${S.length} ${u}s in ${SY}${on}`, `${pct}% of ${u}s better than the tour average${gr ? ` · ${ctx(gr, gl.length, `${Math.round(gMed * 100)}%`)}` : ""}`,
       gi >= 0 ? { board: { rows: gl.map(([kk, v]) => [kk, v, `${Math.round(v * 100)}%`]), title: `Share of ${u}s gaining strokes, ${SY}` } } : {});
     // best run
     let run = 0, st = 0, best = { len: 0 }; S.forEach((q, i) => { if (q.v > 0) { if (!run) st = i; run++; if (run > best.len) best = { len: run, from: S[st].date, to: q.date }; } else run = 0; });
     const runOf = (s0) => { let r0 = 0, b0 = 0; for (const q of s0) { r0 = q.v > 0 ? r0 + 1 : 0; b0 = Math.max(b0, r0); } return b0; };
     const rl = fieldS.map(([kk, s0]) => [kk, runOf(s0)]).sort((a, b) => b[1] - a[1]), rr = rankIn(rl, best.len), rMed = medOf(rl);
-    if (best.len >= 2) add("run", "Best run", { big: String(best.len), small: `${u}s in a row gaining`, lbl: `${md(best.from)} – ${md(best.to)}${rr ? ` · ${ord1(rr)} of ${rl.length} (${pctW(rr, rl.length)})` : `, ${SY}`}` },
+    if (best.len >= 2) add("run", "Best run", { big: String(best.len), small: `${u}s in a row gaining`, lbl: `${md(best.from)} – ${md(best.to)}${rr ? ` · ${ord1(rr)} of ${rl.length}` : `, ${SY}`}` },
       `${P} best run of ${SY}: ${best.len} ${u}s in a row gaining strokes`, `${md(best.from)} to ${md(best.to)}${on}${rr ? ` · ${ctx(rr, rl.length, `${rMed} ${u}s`)}` : ""}`,
       rr ? { board: { rows: rl.map(([kk, v]) => [kk, v, `${v} ${u}s`]), title: `Longest run of ${u}s gaining strokes, ${SY}` } } : {});
     // biggest upside
@@ -1265,15 +1265,15 @@ export async function render(main, { previewClient } = {}) {
       // (update 852) against the tour: each player's own gap to their best stretch in that part of the game
       const gapOf = (s0) => { if (s0.length < win + 2) return null; let b0 = -Infinity; for (let i = 0; i + win <= s0.length; i++) b0 = Math.max(b0, avgOf(s0.slice(i, i + win), (q) => q.c[up.c] ?? 0)); return b0 - avgOf(s0, (q) => q.c[up.c] ?? 0); };
       const ul = up ? fieldS.map(([kk, s0]) => [kk, gapOf(s0)]).filter((x) => x[1] != null).sort((a, b) => b[1] - a[1]) : [], ur = up ? rankIn(ul, up.gain) : null, uMed = medOf(ul);
-      if (up) up.ctx = ur ? ` · the ${ord1(ur)} biggest in ${CATN[up.c].toLowerCase()} of ${ul.length} on tour (${pctW(ur, ul.length)}) · tour median ${sg2(uMed)}` : "";
+      if (up) up.ctx = ur ? ` · tour median ${sg2(uMed)}` : ""; /* (update 921: no rank for the upside) */
       if (up && up.gain > 0.01) add("up", `Biggest upside · ${CATN[up.c]}`, { big: sg2(up.gain), small: `per round in ${CATN[up.c].toLowerCase()}`, lbl: `back to ${me ? "your" : "their"} best ${win}-${u} stretch (${sg2(up.b)}, ${md(up.from)} – ${md(up.to)})` },
         `${CATN[up.c]}: ${sg2(up.gain)} per round to gain by getting back to ${his(k)} best ${win}-${u} stretch`, `${sg2(up.b)} per round from ${md(up.from)} to ${md(up.to)}, against ${sg2(up.now)} over ${SY}${up.ctx || ""}`, ur ? { board: { rows: ul.map(([kk, v]) => [kk, v, sg2(v)]), title: `Gap to their best ${win}-${u} stretch, ${CATN[up.c].toLowerCase()}, ${SY}` } } : {}); }
     // steadiest
     const sw = cats.map((c) => ({ c, sd: sdv(S.map((q) => q.c[c] ?? 0)) })).filter((x) => x.sd != null).sort((a, b) => a.sd - b.sd);
     if (sw.length) { const s0 = sw[0], sx = sw.at(-1);
       const fsd = fieldS.map(([kk, s1]) => [kk, sdv(s1.map((q) => q.c[s0.c] ?? 0))]).filter((x) => x[1] != null).sort((a, b) => a[1] - b[1]), sR = rankIn(fsd, s0.sd, false), si = sR ? sR - 1 : -1, sMed = medOf(fsd);
-      add("steady", `Steadiest · ${CATN[s0.c]}`, { big: `±${s0.sd.toFixed(2)}`, small: `typical swing ${u} to ${u}`, lbl: [si >= 0 ? `${ord1(si + 1)} steadiest of ${fsd.length} (${pctW(si + 1, fsd.length)})` : "", sw.length > 1 ? `${CATN[sx.c]} swings the most (±${sx.sd.toFixed(2)})` : ""].filter(Boolean).join(" · ") },
-        `${P} steadiest part of the game: ${CATN[s0.c].toLowerCase()}, about ±${s0.sd.toFixed(2)} from one ${u} to the next`, `Strokes gained ${CAT_IN[s0.c]}: a typical swing of ±${s0.sd.toFixed(2)} ${u} to ${u} in ${SY}${si >= 0 ? ` · ${ord1(si + 1)} steadiest of ${fsd.length} on tour (${pctW(si + 1, fsd.length)}) · tour median ±${sMed.toFixed(2)}` : ""}${sw.length > 1 ? ` · ${CATN[sx.c].toLowerCase()} swings the most: ±${sx.sd.toFixed(2)}` : ""}`,
+      add("steady", `Steadiest · ${CATN[s0.c]}`, { big: `±${s0.sd.toFixed(2)}`, small: `typical swing ${u} to ${u}`, lbl: [si >= 0 ? `${ord1(si + 1)} steadiest of ${fsd.length}` : "", sw.length > 1 ? `${CATN[sx.c]} swings the most (±${sx.sd.toFixed(2)})` : ""].filter(Boolean).join(" · ") },
+        `${P} steadiest part of the game: ${CATN[s0.c].toLowerCase()}, about ±${s0.sd.toFixed(2)} from one ${u} to the next`, `Strokes gained ${CAT_IN[s0.c]}: a typical swing of ±${s0.sd.toFixed(2)} ${u} to ${u} in ${SY}${si >= 0 ? ` · ${ord1(si + 1)} steadiest of ${fsd.length} on tour · tour median ±${sMed.toFixed(2)}` : ""}${sw.length > 1 ? ` · ${CATN[sx.c].toLowerCase()} swings the most: ±${sx.sd.toFixed(2)}` : ""}`,
         si >= 0 ? { board: { rows: fsd.map(([kk, v]) => [kk, v, `±${v.toFixed(2)}`]), title: `Steadiest ${CATN[s0.c].toLowerCase()}: typical swing ${u} to ${u}, ${SY}` } } : {}); }
     return out;
   }
@@ -1794,7 +1794,7 @@ export async function render(main, { previewClient } = {}) {
       const CW = upHoles?.id === c.id ? (upHoles.cal || []).filter((x) => x.spread >= 0.15 && x.worst.n >= 8) : [];
       if (CW.length) { const x = CW[0], pn = R0.pinName?.(x.h, x.pid), pinT = pn ? `, ${/\bpin\b/i.test(pn) ? pn : `${pn} pin`}` : "";
         out.push({ id: "up-side", hole: x.h, cid: c.id, k: null, kind: "Course", score: 4.9, title: `No. ${x.h}${pinT}: if you miss the green, don't miss ${x.worst.lab}`,
-          detail: `Average score on the hole from there: ${x.worst.v.toFixed(2)} (${x.worst.n} shots), against ${x.best.v.toFixed(2)} when the miss is ${x.best.lab} (${x.best.n} shots): ${x.spread.toFixed(2)} strokes a hole · lower is better · the same read as Strategy Maps' Cal's Way for this pin`,
+          detail: `Average score on the hole from there: ${x.worst.v.toFixed(2)} (${x.worst.n} shots), against ${x.best.v.toFixed(2)} when the miss is ${x.best.lab} (${x.best.n} shots): ${x.spread.toFixed(2)} strokes a hole` /* (update 920: no 'lower is better' or 'same read' lines) */,
           to: "Strategy Maps · Cal’s Targets", run: () => toHole(c.id, x.h, EX.hole(`Where should I miss on hole ${x.h}?`)) }); }
       else {       const M = R0.misses.filter((x) => x.spread >= 0.15);
       if (M.length) { const x = M[0], M2 = M.find((m) => m.worst.h !== x.worst.h) /* (update 780: the "also" from another hole, not the same miss again) */, w = x.worst, b = x.best, pn = R0.pinName(w.h, w.pid), shotN = w.k === 1 ? "the tee shot" : `the approach (shot ${w.k})`, lieW = (l) => (l === "rough" ? "in the rough" : l === "bunker" ? "in a bunker" : l === "fairway" ? "in the fairway" : `in the ${l}`);

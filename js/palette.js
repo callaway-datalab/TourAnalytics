@@ -67,7 +67,7 @@ export async function openPalette(q0 = "", { pick = false } = {}) {
       return n; }
     if (r.kind === "player") {
       const enc = encodeURIComponent(r.key), q = (h) => `${h}?player=${enc}`;
-      const quick = [["Your Report", "#/home"], ["Course Fit", "stats:fit"], ["Practice", "stats:practice:week"], ["Comparisons", q("#/comparisons")], ["Bag", q("#/witb")]];
+      const quick = [["Home", "#/home"], ["Course Fit", "stats:fit"], ["Practice", "stats:practice:week"], ["Comparisons", q("#/comparisons")], ["Bag", q("#/witb")]];
       const n = el("div", base, [el("button", { type: "button", class: "pal-main" }, [el("b", {}, r.label), el("span", { class: "pal-sub" }, r.self ? "You · Player Stats" : `${r.fav ? "★ " : ""}Player Stats`)]),
         el("span", { class: "pal-quick" }, quick.map(([l, h]) => { const a = el("button", { type: "button", class: "pal-q" }, l); a.addEventListener("click", (e) => { e.stopPropagation(); go(h, r); }); return a; }))]);
       n.querySelector(".pal-main").addEventListener("click", () => go("stats:full", r)); return n; }
