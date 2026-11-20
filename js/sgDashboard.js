@@ -22,7 +22,7 @@ export const ALL_TOURS = "__all";
 // (update 817) the Overview, Course Fit and Practice & Goals tabs: each drawn once a player and kept (the dashboard redraws often)
 const tabMemo = new Map();
 function statsTab(kind, me, st, opts) {
-  const sub = kind === "practice" ? st.pgSub || "week" : "", k = `${kind}|${me.key}`;
+  const sub = kind === "practice" ? st.pgSub || "week" : "", k = `${kind}|${me?.key || ""}`;
   if (tabMemo.has(k)) return tabMemo.get(k);
   const box = el("div", { class: "st-tab" }, el("p", { class: "muted center" }, "Loading…"));
   if (tabMemo.size > 6) tabMemo.delete(tabMemo.keys().next().value); tabMemo.set(k, box);
@@ -412,7 +412,7 @@ export function sgDashboard(container, opts) {
     const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "focus"); // (update 505: Full stats unless Focus is picked)
     const resultsOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "results"); // (update 756: Tournament Results)
     // (update 817) Overview (the player's page: what Stats opens on), Course Fit (every course for them), Practice & Goals
-    const tabOn = me && isSG() && !opts.emptyNote ? (["fit", "practice", "compare", "bag", ...(window.__taScout ? ["scout"] : [])].includes(st.view2) ? st.view2 : null) : null; // (update 838: Player Stats (full) unless another page is picked; no Overview)
+    const tabOn = me && isSG() && !opts.emptyNote ? (["fit", "practice", "compare", "bag", ...(window.__taScout ? ["scout"] : [])].includes(st.view2) ? st.view2 : null) : !me && isSG() && !opts.emptyNote && window.__taScout && st.view2 === "scout" ? "scout" : null; // (update 928: Scouting with no player picked: the table, pick from there) // (update 838: Player Stats (full) unless another page is picked; no Overview)
     const noShotF = { ...f, cats: [], lie: [], dist: [], club: [], gear: [] };
     const focusMine = focusOn ? nz(applyFilters(me.rounds, noShotF)) : null;
     const focusField = focusOn ? field.map((p) => ({ ...p, rounds: nz(applyFilters(p.rounds, { ...rankF, cats: [], lie: [], dist: [], club: [], gear: [] })) })) : null;

@@ -5,6 +5,7 @@ import { el, mount } from "./ui.js";
 
 const flash = () => {};
 export async function fill(box, kind, me, { st }) {
+  if (kind === "scout" && !me) { if (!window.__taScout) return; const m = await import("./views/scouting.js"); return m.scoutTab(box, null, ""); } // (update 928: no player picked)
   const pv = window.__previewClient || null, name = me.label || me.key.replace(/^c_/, "");
   if (kind === "overview") { const m = await import("./views/dossier.js"); return m.overview(box, me.key, name); }
   if (kind === "scout" && !window.__taScout) { mount(box, el("div", { class: "ip ip-embed" }, el("p", { class: "muted" }, "Scouting isn't open for your account. Ask Callaway to turn it on."))); return; } // (update 891)

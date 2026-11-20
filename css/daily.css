@@ -1453,3 +1453,15 @@ th.bs-lastn .bs-lastn-w { position: relative; top: 4px; }
 .ol-out { display: grid; gap: 14px; margin-top: 14px; }
 .ol-sec { min-width: 0; } .ol-report { display: block; margin-top: 8px; }
 .ol-sec .fc-learned { margin-top: 6px; }
+/* (update 928) Scouting: the search, the table fitting the page (headers wrap, two-line cells), the numbers behind a trajectory */
+.sc .sc-t { width: 100%; table-layout: auto; }
+.sc .sc-t th { white-space: normal !important; line-height: 1.2; vertical-align: bottom; }
+.sc .sc-t td { white-space: nowrap; vertical-align: top; }
+.sc .sc-t td.sc-path { white-space: normal; min-width: 90px; }
+.sc .sc-t td .sc-sub { display: block !important; margin: 2px 0 0 !important; font-size: 0.78em; font-weight: 500; color: var(--muted, #8e8e93); }
+.sc .sc-tw { overflow-x: auto; }
+@media (max-width: 1100px) { .sc .sc-t th, .sc .sc-t td { padding-left: 6px; padding-right: 6px; } .sc .sc-t { font-size: 0.86rem; } }
+.sc .sc-why { margin: 12px 0; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); }
+.sc .sc-why-t th small { display: block; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted, #8e8e93); }
+.sc .sc-why-t tr.sc-why-tot td { font-weight: 700; } .sc .sc-why-l li { margin: 6px 0; line-height: 1.45; }
+html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-color: var(--line); }
