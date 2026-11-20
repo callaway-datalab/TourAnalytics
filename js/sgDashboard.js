@@ -447,8 +447,9 @@ export function sgDashboard(container, opts) {
       // (update 471) a player's strokes gained: Focus / Full stats first; Focus has its own part-of-the-game pills
       // in place of the filters
       focusOn || resultsOn ? sgFocus.focusSwitch(S) : me && isSG() && !opts.emptyNote ? sgFocus.focusSwitch(S) : null,
-      focusOn || resultsOn || tabOn ? null : filtersPanel(opt),
-      focusOn || resultsOn || tabOn ? null : rangeChip(), // (update 322)
+      focusOn || resultsOn || tabOn || histOn ? null : filtersPanel(opt),
+      focusOn || resultsOn || tabOn || histOn ? null : rangeChip(), // (update 322)
+      histOn ? yearOnly(opt) : null, // (update 933: Historical: just the season)
       el("div", { class: "sg-panel" }, (() => {
         // nothing to show (no player picked, or no rounds yet): the same Filters panel, and why it's empty
         if (opts.emptyNote) return [el("section", { class: "panel sg-empty-note" }, el("p", { class: "empty center" }, opts.emptyNote))];
@@ -562,6 +563,14 @@ export function sgDashboard(container, opts) {
       return isSG() && (rd.shots || []).some((x) => x.cat) ? openRow(tr, rank ? 5 : 4, () => sgBreakdown([rd])) : [tr]; })),
   ]);
   function formPopup(...a) { return sgHero.formPopup(S, ...a); }
+  // (update 933) Leaderboards › Historical: one control, the season (every other filter off)
+  function yearOnly(opt) {
+    const ys = [...(opt.year || [])].map(String).sort().reverse();
+    const sel = el("select", { class: "ti-yearsel", "aria-label": "Season" }, [...ys.map((y) => el("option", { value: y }, y)), el("option", { value: "" }, "All seasons")]);
+    sel.value = st.year?.length === 1 ? String(st.year[0]) : "";
+    sel.addEventListener("change", () => { st.year = sel.value ? [sel.value] : []; draw(); });
+    return el("div", { class: "ti-yearbar" }, [el("label", { class: "fx-eyebrow" }, "Season"), sel]);
+  }
   function eventsOf(...a) { return sgHero.eventsOf(S, ...a); }
   function myFinishes(...a) { return sgHero.myFinishes(S, ...a); }
   function finishesPopup(...a) { return sgHero.finishesPopup(S, ...a); }

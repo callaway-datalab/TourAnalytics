@@ -1472,3 +1472,8 @@ html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-colo
 /* (update 932) the Event Feed's Score column: the score bold, the place (or round to par / thru) under it */
 .lv-table td.lv-score { font-weight: 700; white-space: nowrap; }
 .lv-table td.lv-score .lv-rk { font-weight: 500; }
+/* (update 933) Historical: the season picker, the tournaments as rows to open, the tournament opened below */
+.ti-yearbar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; } .ti-yearbar .fx-eyebrow { margin: 0; } .ti-yearsel { width: auto; min-width: 140px; margin: 0 !important; }
+.ti-events tr.ti-ev-row { cursor: pointer; } .ti-events tr.ti-ev-row:hover td { background: rgba(255,255,255,0.04); } .ti-events tr.ti-ev-row.on td { background: rgba(212,180,131,0.12); }
+.ti-detail-wrap { grid-column: 1 / -1; display: grid; gap: 14px; } .ti-detail-wrap:empty { display: none; }
+.tr-detail { display: grid; gap: 14px; }

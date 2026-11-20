@@ -206,32 +206,7 @@ export function resultsView(S, rounds, field) {
   // that week beside it where the stats file has them; without an official one (DP World Tour, or not saved yet), the
   // stats file's field ranked by strokes gained per round
   // (update 915) how it played out: the plain-words story and a race chart (the top five's strokes behind the lead, every hole)
-  function drawStory(S, B) {
-    const ICON = { lead: "\u{1F3C6}", comeback: "\u{1F4C8}", turn: "\u21AA", slip: "\u26A0", margin: "\u{1F3C1}", changes: "\u21C4", big: "\u2B06", charge: "\u{1F680}", low: "\u2B50" };
-    const rl = el("div", { class: "tr-rl" }, S.roundLeaders.map((x) => el("div", { class: "tr-rl-c" }, [el("span", { class: "muted small" }, `After round ${x.r}`), el("b", {}, x.leaders.length > 2 ? `${x.leaders.length} tied` : x.leaders.map((n) => String(n).split(/\s+/).slice(-1)[0]).join(", ")),
-      el("small", { class: "muted" }, `${x.score === 0 ? "E" : x.score > 0 ? `+${x.score}` : `\u2212${-x.score}`}${x.margin ? ` · by ${x.margin}` : x.leaders.length > 1 ? " · tied" : ""}${x.winnerBack ? ` · ${String(S.winnerName).split(/\s+/).slice(-1)[0]} ${x.winnerBack} back` : ""}`)])));
-    storyBox.hidden = false;
-    mount(storyBox, [el("p", { class: "fx-eyebrow" }, `How it played out · ${B.name || ev.event} ${ev.year}`), el("ul", { class: "tr-facts" }, S.facts.map((f) => el("li", { class: `tr-f tr-f-${f.k}` }, [el("span", { class: "tr-fi", "aria-hidden": "true" }, ICON[f.k] || "\u2022"), el("span", {}, f.t)]))),
-      rl, raceChart(S), el("p", { class: "muted small" }, "From every player's hole-by-hole scorecard. Holes are compared in number order (with two tees in the early rounds, \"after No. 9\" is the same hole for everyone, not the same moment).")]);
-  }
-  function raceChart(S) {
-    const { n, lines, rounds } = S.series, W = window.innerWidth < 640 ? 420 : 720, H = window.innerWidth < 640 ? 260 : 240, L = 34, Rm = 110, T = 12, Bm = 22, NS = "http://www.w3.org/2000/svg";
-    const sv = (t, a = {}, kids = []) => { const e = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); for (const c of [].concat(kids)) if (c != null) e.append(c); return e; };
-    const mx = Math.max(4, ...lines.flatMap((l) => l.pts.filter((v) => v != null))), cap = Math.min(mx, 12);
-    const X = (c) => L + (c / Math.max(1, n - 1)) * (W - L - Rm), Y = (v) => T + (Math.min(v, cap) / cap) * (H - T - Bm);
-    const COL = ["#ffcc00", "#64d2ff", "#30d158", "#bf5af2", "#ff9f0a"], g = [];
-    for (let v = 0; v <= cap; v += cap > 8 ? 4 : 2) g.push(sv("line", { x1: L, x2: W - Rm, y1: Y(v), y2: Y(v), class: "tr-grid" }), sv("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", class: "tr-ax" }, v === 0 ? "Lead" : `+${v}`));
-    rounds.forEach((r, i) => { const x0 = X(i * 18); if (i) g.push(sv("line", { x1: x0, x2: x0, y1: T, y2: H - Bm, class: "tr-grid" })); g.push(sv("text", { x: X(i * 18 + 9), y: H - 6, "text-anchor": "middle", class: "tr-ax" }, `Round ${r}`)); });
-    const labs = [];
-    lines.forEach((l, i) => { let d = "", pen = false; l.pts.forEach((v, c) => { if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${X(c).toFixed(1)} ${Y(v).toFixed(1)} `; pen = true; });
-      const lastI = l.pts.findLastIndex((v) => v != null), col = COL[i % COL.length];
-      g.push(sv("path", { d, fill: "none", stroke: col, "stroke-width": l.win ? 2.8 : 1.6, opacity: l.win ? 1 : 0.85 }));
-      if (lastI >= 0) labs.push({ x: X(lastI) + 6, y: Y(l.pts[lastI]) + 4, col, t: String(l.name).split(/\s+/).slice(-1)[0] }); });
-    // the names at the line ends, nudged apart so they never overlap
-    labs.sort((a, b) => a.y - b.y); for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 13) labs[i].y = labs[i - 1].y + 13;
-    for (const lb of labs) g.push(sv("text", { x: lb.x, y: lb.y, class: "tr-lbl", fill: lb.col }, lb.t));
-    return el("div", { class: "tr-race" }, [el("p", { class: "muted small" }, "Strokes behind the lead after every hole (top of the chart = leading), the top five finishers"), sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "tr-race-svg", role: "img", "aria-label": "Strokes behind the lead" }, g)]);
-  }
+  const drawStory = (S2, B) => storyInto(storyBox, S2, B, ev); // (update 933: shared with Historical's tournament view)
   (async () => {
     const sgOf = new Map(); // nameKey → { label, sg, n }
     // (update 844) the field's own names for the event can carry the year ("Baycurrent Classic 2026"), and its players their name as .name
@@ -381,4 +356,81 @@ export function resultsView(S, rounds, field) {
     shotPop = openShots;
   })().catch((e) => { console.warn("results", e); mount(heroBox, el("p", { class: "muted small" }, `This tournament couldn’t be drawn (${e?.message || e}).`)); }); // (update 760: never a blank page)
   return [picker, heroBox, storyBox, lbBox]; // (update 925: each player's scorecard opens inside the leaderboard)
+}
+
+// (update 933) how a tournament played out, and its race chart: shared by a player's tournament and Historical's
+function storyInto(storyBox, S, B, ev) {
+  const ICON = { lead: "\u{1F3C6}", comeback: "\u{1F4C8}", turn: "\u21AA", slip: "\u26A0", margin: "\u{1F3C1}", changes: "\u21C4", big: "\u2B06", charge: "\u{1F680}", low: "\u2B50" };
+  const rl = el("div", { class: "tr-rl" }, S.roundLeaders.map((x) => el("div", { class: "tr-rl-c" }, [el("span", { class: "muted small" }, `After round ${x.r}`), el("b", {}, x.leaders.length > 2 ? `${x.leaders.length} tied` : x.leaders.map((n) => String(n).split(/\s+/).slice(-1)[0]).join(", ")),
+    el("small", { class: "muted" }, `${x.score === 0 ? "E" : x.score > 0 ? `+${x.score}` : `\u2212${-x.score}`}${x.margin ? ` · by ${x.margin}` : x.leaders.length > 1 ? " · tied" : ""}${x.winnerBack ? ` · ${String(S.winnerName).split(/\s+/).slice(-1)[0]} ${x.winnerBack} back` : ""}`)])));
+  storyBox.hidden = false;
+  mount(storyBox, [el("p", { class: "fx-eyebrow" }, `How it played out · ${B.name || ev.event} ${ev.year}`), el("ul", { class: "tr-facts" }, S.facts.map((f) => el("li", { class: `tr-f tr-f-${f.k}` }, [el("span", { class: "tr-fi", "aria-hidden": "true" }, ICON[f.k] || "\u2022"), el("span", {}, f.t)]))),
+    rl, raceChart(S), el("p", { class: "muted small" }, "From every player's hole-by-hole scorecard. Holes are compared in number order (with two tees in the early rounds, \"after No. 9\" is the same hole for everyone, not the same moment).")]);
+}
+function raceChart(S) {
+  const { n, lines, rounds } = S.series, W = window.innerWidth < 640 ? 420 : 720, H = window.innerWidth < 640 ? 260 : 240, L = 34, Rm = 110, T = 12, Bm = 22, NS = "http://www.w3.org/2000/svg";
+  const sv = (t, a = {}, kids = []) => { const e = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); for (const c of [].concat(kids)) if (c != null) e.append(c); return e; };
+  const mx = Math.max(4, ...lines.flatMap((l) => l.pts.filter((v) => v != null))), cap = Math.min(mx, 12);
+  const X = (c) => L + (c / Math.max(1, n - 1)) * (W - L - Rm), Y = (v) => T + (Math.min(v, cap) / cap) * (H - T - Bm);
+  const COL = ["#ffcc00", "#64d2ff", "#30d158", "#bf5af2", "#ff9f0a"], g = [];
+  for (let v = 0; v <= cap; v += cap > 8 ? 4 : 2) g.push(sv("line", { x1: L, x2: W - Rm, y1: Y(v), y2: Y(v), class: "tr-grid" }), sv("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", class: "tr-ax" }, v === 0 ? "Lead" : `+${v}`));
+  rounds.forEach((r, i) => { const x0 = X(i * 18); if (i) g.push(sv("line", { x1: x0, x2: x0, y1: T, y2: H - Bm, class: "tr-grid" })); g.push(sv("text", { x: X(i * 18 + 9), y: H - 6, "text-anchor": "middle", class: "tr-ax" }, `Round ${r}`)); });
+  const labs = [];
+  lines.forEach((l, i) => { let d = "", pen = false; l.pts.forEach((v, c) => { if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${X(c).toFixed(1)} ${Y(v).toFixed(1)} `; pen = true; });
+    const lastI = l.pts.findLastIndex((v) => v != null), col = COL[i % COL.length];
+    g.push(sv("path", { d, fill: "none", stroke: col, "stroke-width": l.win ? 2.8 : 1.6, opacity: l.win ? 1 : 0.85 }));
+    if (lastI >= 0) labs.push({ x: X(lastI) + 6, y: Y(l.pts[lastI]) + 4, col, t: String(l.name).split(/\s+/).slice(-1)[0] }); });
+  // the names at the line ends, nudged apart so they never overlap
+  labs.sort((a, b) => a.y - b.y); for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 13) labs[i].y = labs[i - 1].y + 13;
+  for (const lb of labs) g.push(sv("text", { x: lb.x, y: lb.y, class: "tr-lbl", fill: lb.col }, lb.t));
+  return el("div", { class: "tr-race" }, [el("p", { class: "muted small" }, "Strokes behind the lead after every hole (top of the chart = leading), the top five finishers"), sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "tr-race-svg", role: "img", "aria-label": "Strokes behind the lead" }, g)]);
+}
+
+/** (update 933) Leaderboards › Historical: a tournament opened from the list: how it played out (from the scorecards) and the
+ *  official leaderboard, each player's scorecard a tap away. */
+export function tournamentDetail({ event, year, tour }) {
+  const box = el("div", { class: "tr-detail" }, el("p", { class: "muted small" }, "Loading the tournament…"));
+  (async () => {
+    const [PI, TS] = await Promise.all([import("./playerInsights.js"), import("./tourneyStory.js")]), code = PI.tourCodeOf(tour);
+    if (!code) { mount(box, el("p", { class: "muted small" }, "This tour has no official leaderboards in the live feed (the PGA TOUR and Korn Ferry Tour do).")); return; }
+    await PI.ensureResults(code, [String(year)]).catch(() => null);
+    const B = PI.officialBoard(event, String(year), code);
+    if (!B) { mount(box, el("p", { class: "muted small" }, `The live feed hasn't saved an official leaderboard for ${event} ${year} yet.`)); return; }
+    const C = B.tid ? await PI.loadCards(B.tid).catch(() => null) : null, S = C ? TS.tourneyStory(C, B.rows) : null;
+    const storyBox = el("section", { class: "panel tr-story", hidden: true }); if (S) storyInto(storyBox, S, B, { event, year: String(year) });
+    const nR = S ? Math.max(...S.series.rounds, 0) : 0, rCols = Array.from({ length: nR }, (_, i) => i + 1);
+    const tp = (t) => (t == null || !Number.isFinite(Number(t)) ? "—" : Number(t) === 0 ? "E" : Number(t) > 0 ? `+${Number(t)}` : `−${-Number(t)}`);
+    const pos = (p) => { const u = String(p || "").toUpperCase(); return /^(CUT|MC)$/.test(u) ? "MC" : u || "—"; };
+    const head = ["Pos", "Player", ...rCols.map((r) => `R${r}`), "To par"];
+    let all = false, open = null; const TOP = 25;
+    const lb = el("section", { class: "panel tr-lb" });
+    const draw = () => { const rows = all ? B.rows : B.rows.slice(0, TOP);
+      const tb = el("tbody", {}, rows.flatMap((r) => { const id = String(r.pid || r.name), isOpen = open === id, rr = S && r.pid ? S.roundsOf(r.pid) : null;
+        const tr = el("tr", { class: `tr-lb-row${isOpen ? " open" : ""}`, role: "button", tabindex: "0", "aria-expanded": String(isOpen) }, [el("td", {}, pos(r.pos)), el("td", {}, [el("span", { class: "tr-lb-car" }, isOpen ? "▾ " : "▸ "), r.name]),
+          ...rCols.map((k) => el("td", { class: "num tr-rd" }, rr?.[k] != null ? String(rr[k]) : "—")), el("td", { class: "num strong" }, tp(r.total))]);
+        const go = () => { open = isOpen ? null : id; draw(); }; tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+        return isOpen ? [tr, el("tr", { class: "tr-lb-x" }, el("td", { colspan: String(head.length) }, officialCard(C, r)))] : [tr]; }));
+      const more = B.rows.length > TOP ? (() => { const b = el("button", { type: "button", class: "link tr-lb-more" }, all ? `Show the top ${TOP}` : `Show all ${B.rows.length}`); b.addEventListener("click", () => { all = !all; draw(); }); return b; })() : null;
+      mount(lb, [el("p", { class: "fx-eyebrow" }, `Leaderboard · ${B.name || event} ${year}`), el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t" }, [el("thead", {}, el("tr", {}, head.map((h, i) => el("th", { class: i >= 2 ? "num" : "" }, h)))), tb])), more,
+        el("p", { class: "muted small" }, `Official PGA Tour leaderboard${B.final ? "" : " (not final)"}.${C ? " Tap a player for his scorecard." : " Round scores and scorecards appear once the live feed has saved this event's scorecards."}`)]); };
+    draw();
+    mount(box, [S ? storyBox : null, lb]);
+  })().catch((e) => { console.warn("tournament", e); mount(box, el("p", { class: "muted small" }, "This tournament couldn’t be drawn just now.")); });
+  return box;
+}
+// a player's official scorecard, round by round (no strokes gained: that needs the tournament's shots)
+function officialCard(C, r) {
+  const pid = r.pid ? String(r.pid) : null, rIds = C && pid ? Object.keys(C.rounds || {}).filter((k) => Array.isArray(C.rounds[k]?.[pid]) && C.rounds[k][pid].some((v) => v > 0)).sort((a, b) => a - b) : [];
+  if (!rIds.length) return el("p", { class: "muted small" }, `No hole-by-hole scores for ${r.name} saved yet.`);
+  const wrap = el("div", { class: "tr-sc tr-sc-in" }); let rd = rIds[0];
+  const par = (h) => (C.par?.[h - 1] > 0 ? C.par[h - 1] : null), sc = (h) => { const v = C.rounds[rd]?.[pid]?.[h - 1]; return v > 0 ? v : null; };
+  const draw = () => {
+    const tabs = el("div", { class: "tr-rounds" }, rIds.map((id) => { const b = el("button", { type: "button", class: `tr-rd${id === rd ? " on" : ""}` }, `R${id}`); b.addEventListener("click", (e) => { e.stopPropagation(); rd = id; draw(); }); return b; }));
+    const half = (hs, lab) => { const sum = (f) => { const v = hs.map(f); return v.every((x) => x != null) ? v.reduce((a, b) => a + b, 0) : null; };
+      return [el("tr", { class: "tr-sc-hr" }, [el("th", {}, "Hole"), ...hs.map((h) => el("th", {}, String(h))), el("th", {}, lab)]),
+        el("tr", {}, [el("th", {}, "Par"), ...hs.map((h) => el("td", { class: "muted" }, par(h) ?? "")), el("td", { class: "muted" }, sum(par) ?? "")]),
+        el("tr", {}, [el("th", {}, "Score"), ...hs.map((h) => { const p0 = par(h), v = sc(h), d = p0 != null && v != null ? v - p0 : null; return el("td", { class: "tr-sc-c flat" }, el("span", { class: `tr-sc-s ${d == null ? "" : d <= -2 ? "eagle" : d === -1 ? "birdie" : d === 0 ? "par" : d === 1 ? "bogey" : "dbl"}` }, v == null ? "·" : String(v))); }), el("td", { class: "tr-tot" }, sum(sc) ?? "")])]; };
+    mount(wrap, [el("div", { class: "tr-sc-h" }, [el("p", { class: "fx-eyebrow" }, `${r.name} · scorecard`), tabs]),
+      el("div", { class: "tr-sc-scroll" }, el("table", { class: "tr-sc-t" }, el("tbody", {}, [...half([1, 2, 3, 4, 5, 6, 7, 8, 9], "Out"), ...half([10, 11, 12, 13, 14, 15, 16, 17, 18], "In")])))]); };
+  draw(); return wrap;
 }
