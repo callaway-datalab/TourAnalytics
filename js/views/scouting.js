@@ -167,19 +167,26 @@ export async function scoutTab(box, key0, name0) {
   // (update 939) career stage, in plain words, from things anyone can check: his age, how many seasons he's been ranked on
   // his tour, his best full season, and his last 12 months against it
   const stMemo = new Map();
-  const stageOf = (r0) => { if (stMemo.has(r0.k)) return stMemo.get(r0.k); const tj = trajOf(r0.k); let out = null;
+  // (update 942) career stage agrees with the forecast: it's read from where the forecast has him going (next season against
+  // three seasons out), his age and seasons on record, and his last 12 months against his best full season. A player the
+  // forecast still has among the best (top 15 next season) is never "past his peak"; at most "starting to slip".
+  const stageOf = (r0) => { const f = ensureFc().map.get(r0.k), id = `${r0.k}|${f ? 1 : 0}`; if (stMemo.has(id)) return stMemo.get(id); const tj = trajOf(r0.k); let out = null;
     if (tj) { const T0 = r0.T || tj.T || mainTour.get(r0.k) || tour, B0 = build(T0), seas = B0.years.map((y) => [y, B0.season[y].by.get(r0.k)]).filter(([, o]) => o), n = seas.length, age = r0.age;
       const full = seas.filter(([y]) => y !== B0.lastY), best = full.length ? full.reduce((m, x) => (x[1].sg > m[1].sg ? x : m)) : null, now = tj.now;
-      const up = tj.k === "up" || tj.k === "up?", down = tj.k === "down" || tj.k === "down?";
-      const why = `Age ${age ?? "unknown"}, ${n} season${n === 1 ? "" : "s"} ranked on the ${TS(T0)}${best ? `; best full season ${sg2(best[1].sg)} (${best[0]})` : ""}; last 12 months ${sg2(now)}${tj.change != null ? ` (${sg2(tj.change)} on the 12 before)` : ""}`;
+      const y1 = f?.years?.[0], y3 = f?.years?.[2], fc = y1 && y3 ? y3.total - y1.total : null, elite = y1 ? y1.rank <= 15 : false;
+      const up = tj.k === "up" || tj.k === "up?", down = tj.k === "down" || tj.k === "down?", offBest = best ? now - best[1].sg : 0;
+      const why = [`Age ${age ?? "unknown"}, ${n} season${n === 1 ? "" : "s"} ranked on the ${TS(T0)}`, best ? `best full season ${sg2(best[1].sg)} (${best[0]})` : null, `last 12 months ${sg2(now)}`,
+        y1 && y3 ? `forecast ${sg2(y1.total)} next season (≈${ord(y1.rank)} on the PGA), ${sg2(y3.total)} in ${y3.year}` : null].filter(Boolean).join("; ");
       let k = "steady", t = "Steady";
-      if (n <= 2 && (age == null || age <= 29)) { k = up ? "rising" : "early"; t = up ? "Still rising" : "Early career"; }
-      else if (age != null && age <= 27 && !down && (!best || now >= best[1].sg - 0.1)) { k = "rising"; t = "Still rising"; }
-      else if (age != null && age >= 33 && (down || (best && now < best[1].sg - 0.3))) { k = "past"; t = "Past his peak"; }
-      else if (best && now >= best[1].sg - 0.15 && !down) { k = "peak"; t = up && age != null && age <= 30 ? "Still rising" : "At his peak"; if (t === "Still rising") k = "rising"; }
-      else if (best && now < best[1].sg - 0.3) { k = age != null && age >= 31 ? "past" : "below"; t = k === "past" ? "Past his peak" : "Below his best"; }
+      const rising = (fc != null && fc >= 0.1) || (age != null && age <= 27 && !down && (fc == null || fc > -0.05));
+      const slipping = (fc != null && fc <= -0.1) || (age != null && age >= 33 && (down || offBest < -0.3));
+      if (n <= 2 && (age == null || age <= 29) && !rising) { k = "early"; t = "Early career"; }
+      else if (rising) { k = "rising"; t = "Still rising"; }
+      else if (slipping && age != null && age >= 33) { k = elite ? "slip" : "past"; t = elite ? "Starting to slip" : "Past his peak"; }
+      else if (best && offBest >= -0.3) { k = "peak"; t = "At his peak"; }
+      else if (best && offBest < -0.3) { k = "below"; t = "Below his best"; }
       out = { k, t, why }; }
-    stMemo.set(r0.k, out); return out; };
+    stMemo.set(id, out); return out; };
   const TRJ = { up: ["▲ Rising", "up"], "up?": ["▲ Probably rising", "up"], down: ["▼ Slipping", "down"], "down?": ["▼ Probably slipping", "down"], steady: ["● Steady", "steady"], new: ["New", "none"] };
   const trajTip = (t) => (t && t.k !== "new" ? `Strokes gained per round: ${sg2(t.ago)} over ${W0} (${t.n0} rounds) → ${sg2(t.now)} over ${W1} (${t.n1} rounds) = ${sg2(t.change)}. Luck alone would move it this much ${luckTxt(t.z)}.` : t ? `Only ${t.n0} rounds in ${W0}: too few to compare. ${sg2(t.now)} per round over ${W1} (${t.n1} rounds).` : `Fewer than ${MINW} rounds in ${W1}.`);
   function pickKey(k) { sel = k; if (mainTour.get(k)) tour = mainTour.get(k); draw();
@@ -341,12 +348,23 @@ export async function scoutTab(box, key0, name0) {
           tile("Trajectory", tj && tj.k !== "new" ? `${arrow} ${sg2(tj.change)}` : arrow, tj && tj.k !== "new" ? `${sg2(tj.ago)} \u2192 ${sg2(tj.now)} per round (12 months before \u2192 last 12 months)` : "", `dir-${dir}`),
           y1 ? tile(`${y1.year} on the PGA Tour (best guess)`, `≈${ord(y1.rank)}`, tour !== FT ? `likely ${ord(y1.rankHi)}–${ord(y1.rankLo)} · ${y1.cardLevel != null ? `${Math.round(y1.cardLevel * 100)}% chance of a PGA card-level season` : "if he plays there"}` : `likely ${ord(y1.rankHi)}–${ord(y1.rankLo)}`) : tile("Next season (best guess)", "…", F.busy ? "working it out" : "not enough data"),
           t10 != null ? tile("Chance of a PGA top-10 season", `${Math.round(t10 * 100)}%`, oneIn(t10)) : tile("Chance of a PGA top-10 season", "…", FU.busy ? "working it out" : "—")]),
+        rankGap(r, fc, rk, cur), // (update 942: why next season's rank differs from now)
         whyBox(r, tj, fc, rk),
         fc?.years?.length === 3 ? el("p", { class: "sc-next3" }, [el("b", {}, "Next three seasons on the PGA Tour: "), fc.years.map((y) => `${y.year} ≈${ord(y.rank)} (${sg2(y.total)} per round)`).join(" · "),
           el("small", {}, `Why: his rounds over recent seasons (newer ones count most), each adjusted for how strong the field was, pulled toward the tour average by how much data there is${fc.age != null ? ", plus the usual change at his age" : ""}. A great season is usually followed by a slightly less great one: that's built in, learned from this file.${fc.flags?.puttLed ? " This season was led by putting, which tends not to last." : ""}`)]) : null,
         flags.length ? el("div", { class: "sc-flags" }, [el("p", { class: "ip-kick" }, "What stands out"), el("ul", {}, flags.map(([k, t, why]) => el("li", { class: `sc-flag f-${k}` }, [el("span", { class: "sc-fi", "aria-hidden": "true" }, k === "g" ? "✓" : k === "r" ? "!" : "?"), el("span", {}, [el("b", {}, t), el("small", {}, why)])])))]) : null,
         comp8.length ? el("p", { class: "sc-likes" }, [el("b", {}, `Players at his level with a game like his: `), `past seasons ranked about where his is (${ord(sc.levelBand.lo)}–${ord(sc.levelBand.hi)} of a ${cur.of}-player season) with the same strengths and weaknesses${r.age != null ? " and a similar age" : ""}. Closest: `, comp8.slice(0, 3).map((c) => `${c.x.nm} (${c.x.y}: ${ord(c.x.rank)} of ${c.x.of}, then ${ord(c.x.next.rank)}${c.x.next.partial ? " so far" : ""})`).join(", "), `. Of the ${comp8.length} most similar, ${up8} improved the next season.`]) : null,
         el("p", { class: "muted small" }, `"Likely" range: the middle half of the outcomes the forecaster expects. Ranks are by strokes gained per round among the ${tour || "tour"}'s players with ${MINTXT}.`)]);
+    }
+    // (update 942) when the forecast's rank next season is well off his rank now, the reasons, in numbers
+    function rankGap(r, fc, rkNow, cur) {
+      const y1 = fc?.years?.[0]; if (!y1 || !rkNow || Math.abs(y1.rank - rkNow) < 4) return null;
+      const B0 = build(tour), seas = B0.years.map((y) => [y, B0.season[y].by.get(r.k)]).filter(([, o]) => o && o.n >= 10).slice(-3), eq = fc.eqNow;
+      const better = y1.rank < rkNow, bits = [];
+      if (seas.length >= 2) bits.push(`it weighs his last few seasons, not only this one (${seas.map(([y, o]) => `${y}${y === B0.lastY ? " so far" : ""} ${sg2(o.sg)}`).join(", ")}; newer seasons count more)`);
+      if (eq && cur?.sg != null && Math.abs(eq.total - cur.sg) >= 0.05) bits.push(`it credits him for how strong his fields were: ${sg2(cur.sg)} a round against the fields he played becomes ${sg2(eq.total)} against an average PGA Tour field`);
+      bits.push(better ? "and other players' hot seasons are expected to cool too, so a steady player moves up" : "and a hot season is expected to cool, as most do");
+      return el("p", { class: "sc-rankgap" }, [el("b", {}, `Why ≈${ord(y1.rank)} next season when ${ord(rkNow)} now: `), `the forecast ${bits.join("; ")}.`]);
     }
     // (update 929) how much of a season's difference from a player's usual shows up again the next season, learned from every
     // tour in the file: each season (30+ rounds) with up to 3 seasons before it (40+ rounds) and a season after (30+ rounds);

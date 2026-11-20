@@ -1524,3 +1524,6 @@ html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-colo
 html[data-theme="light"] .sc .st-peak, html[data-theme="light"] .sc .sc-tile.st-peak b { color: #a07800; }
 @media (max-width: 640px) { .sc .sc-pc2-b .sc-stage { font-size: 0.7rem; padding: 1px 6px; } .sc .sc-pc2-a .sc-tick { align-self: center; } }
 @media (max-width: 640px) { .sc .ip-t th, .sc .ip-t td { white-space: normal; } .sc .ip-t { font-size: 0.8rem; } }
+/* (update 942) the career stage "starting to slip", and why next season's rank differs from now */
+.sc .st-slip { color: #ff9f0a; } .sc .sc-tile.st-slip b { color: #ff9f0a; }
+.sc .sc-rankgap { margin: 10px 0; padding: 10px 12px; border-left: 3px solid #64d2ff; background: rgba(100,210,255,0.06); border-radius: 0 10px 10px 0; line-height: 1.5; }

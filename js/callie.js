@@ -959,6 +959,9 @@ export async function shotFromTalk(text) {
 }
 /* (update 685) the round in progress: "take me to my current round", "look up my round", "what hole am I on" */
 const CUR_ROUND = /\b(current|my|today'?s|ongoing|live|open)\s+(round|scorecard|card)\b|\bround\s+(i'?m|i am)\s+(currently\s+)?(playing|on|in)\b|\b(what|which)\s+hole\s+(am\s+i|i'?m)\s+(currently\s+)?on\b|\bwhere\s+am\s+i\b.{0,20}\bround\b/i;
+// (update 942) the natural ways of asking about your own round in progress: "what hole am I currently playing", "which hole are
+// we on", "what's my score so far", "how am I doing today", "what hole is next", "where am I on the course"
+const CUR_ROUND2 = /\b(what|which)\s+hole\b.{0,25}\b(am\s+i|i'?m|are\s+we|we'?re|is\s+(this|it|next)|next)\b|\b(what|which)\s+hole\s+(is\s+)?(next|now)\b|\bwhat'?s?\s+(is\s+)?my\s+(score|total)\b.{0,20}(so\s+far|today|now|round)?|\bhow\s+am\s+i\s+(doing|playing|scoring)\b.{0,20}\b(today|so\s+far|this\s+round|now)\b|\bwhere\s+am\s+i\b.{0,25}\b(course|round|hole)\b|\b(my|this)\s+(current\s+)?hole\b|\bhole\s+(am\s+i|i'?m)\s+(currently\s+)?(on|playing|at)\b/i;
 async function currentRound() {
   const { getState } = await import("./auth.js"), st = getState();
   const { myEntryKey } = await import("./views/dataEntry.js"), { watchMyRounds } = await import("./rounds.js");
@@ -968,14 +971,18 @@ async function currentRound() {
   return cur ? { cur, href: `#/entry/${encodeURIComponent(cur.playerKey || myEntryKey(st))}/${cur.id}` } : null;
 }
 async function roundAnswer(q) {
-  if (!CUR_ROUND.test(q)) return null;
+  if (!CUR_ROUND.test(q) && !CUR_ROUND2.test(q)) return null;
   const r = await currentRound().catch(() => null);
   if (!r) return { text: "You don\u2019t have a round in progress. Start one on **Enter New Round**.", go: { href: "#/entry/new", label: "Start a round \u2192", nav: true } };
-  let hole = null;
-  try { const { roundHoleScore } = await import("./roundCalc.js"); const h = (r.cur.holes || []).find((hh) => !roundHoleScore(r.cur, hh).done); hole = h?.n ?? null; } catch { /* */ }
+  let hole = null, done = 0, strokes = 0, par = 0;
+  try { const { roundHoleScore } = await import("./roundCalc.js"); const hs = r.cur.holes || [], h = hs.find((hh) => !roundHoleScore(r.cur, hh).done); hole = h?.n ?? null;
+    for (const hh of hs) { const sc = roundHoleScore(r.cur, hh); if (sc.done) { done++; strokes += sc.strokes; par += Number(hh.par) || 0; } } } catch { /* */ }
+  // (update 942) and the score so far
+  const tp = par ? strokes - par : null, tpTxt = tp == null ? "" : tp === 0 ? "even par" : tp > 0 ? `${tp} over par` : `${-tp} under par`;
+  const score = done ? ` You\u2019ve finished ${done} hole${done === 1 ? "" : "s"}: ${strokes} strokes${tpTxt ? `, ${tpTxt}` : ""}.` : "";
   const where = `${r.cur.course ? ` at **${r.cur.course}**` : ""}${hole ? `, on hole **${hole}**` : ""}`;
-  const ask = /^\s*(what|which|where)\b/i.test(q);
-  return { text: ask ? `You\u2019re playing your round${where}.` : `Opening your round${where}.`, go: { href: r.href, label: "Open the round \u2192", nav: true }, auto: !ask, href: r.href };
+  const ask = /^\s*(what|which|where|how)\b/i.test(q);
+  return { text: ask ? `You\u2019re playing your round${where}.${score}` : `Opening your round${where}.`, go: { href: r.href, label: "Open the round \u2192", nav: true }, auto: !ask, href: r.href };
 }
 
 /** (update 644) hold the header's Cal: what was said, asked (or a shot, added) without opening Cal first */
