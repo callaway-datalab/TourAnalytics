@@ -37,7 +37,7 @@ export function statsHref() {
   return "#/dashboard";
 }
 // (update 858) bag and practice are under Play: switching across Stats and Play reloads the page so the header redraws (as ui.js's sameStatsHeader)
-const samePlayHeader = (v) => { const P = ["bag", "practice"], now = new URLSearchParams(location.hash.split("?")[1] || "").get("view") || "full"; return P.includes(v) === P.includes(now); };
+const samePlayHeader = (v) => { const P = ["bag", "practice"], F = ["results"], now = new URLSearchParams(location.hash.split("?")[1] || "").get("view") || "full", h = (x) => (P.includes(x) ? 1 : F.includes(x) ? 2 : 0); return h(v) === h(now); }; // (update 930: Historical is under Leaderboards)
 export function openStatsTab(view2, sub = null) {
   // (update 833) Stats already showing: switch the view in place; else open Stats on it (?view= in the address)
   if (document.querySelector(".st-host") && samePlayHeader(view2)) { const h0 = location.hash.split("?"), q = new URLSearchParams(h0[1] || ""); q.set("view", view2); history.replaceState(history.state, "", `${h0[0]}?${q}`); window.dispatchEvent(new CustomEvent("ta-stats-view", { detail: { view: view2, sub } })); import("./ui.js").then((m) => m.syncStatsNav()).catch(() => {}); return; }

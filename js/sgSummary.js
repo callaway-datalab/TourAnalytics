@@ -1,6 +1,6 @@
 // (sgDashboard split) The summary: the category cards, the summary box, the stretch / form boards and the tour blocks.
 // Each function takes S first: the Stats page's state and helpers (see sgDashboard.js), read live.
-import { CATEGORIES, SUMMARY, applyFilters, el, fmtSG, infoTip, rank, sgColor, sgPerRound } from "./sgShared.js";
+import { CATEGORIES, SUMMARY, applyFilters, el, fmtSG, infoTip, mount, rank, sgColor, sgPerRound } from "./sgShared.js";
 import { scatterSvg } from "./miniCharts.js"; // (update 750)
 import { formWord } from "./sg.js"; // (update 670)
 import { formUnits } from "./sgHero.js"; // (update 673: the same stretches as the Form pill)
@@ -257,25 +257,58 @@ export function tourBlocks(S, slicedField) {
       for (const x of e.top10) tops.set(x.p, { p: x.p, n: (tops.get(x.p)?.n || 0) + 1 });
     }
     const list = [...all].reverse();
-    if (list.length >= 2) {
-      blocks.push(S.panelBox("Tournaments", [el("div", { class: "table-scroll ti-events-scroll", tabindex: "0" }, el("table", { class: "plain rankings ti-events" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, "Players"), el("th", {}, "Best in the field")])),
-        el("tbody", {}, list.map((e) => el("tr", {}, [el("td", { class: "ht-date" }, S.dateTxt(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.players)),
-          el("td", {}, e.best ? [nameBtn(e.best.p), e.winNo > 1 ? el("span", { class: "ti-winno" }, ` (${e.winNo})`) : null] : "\u2014")]))),
-      ]))], "full"));
+    if (list.length >= 2) { // (update 930: the tournament recap is on Leaderboards › Historical now)
       // Wins (led the field in this stat), Top 10s (the same way), and the FedEx Cup and OWGR (coming)
       const col = (title, rows, empty) => el("div", { class: "ti-col" }, [el("p", { class: "ti-col-title" }, title),
         rows.length ? el("ol", { class: "ti-list ti-scroll", tabindex: "0", "aria-label": title }, rows.map((x) => el("li", {}, [nameBtn(x.p), el("strong", { class: "ti-v" }, String(x.n))])))
           : el("p", { class: "muted small" }, empty)]);
       const byN = (m) => [...m.values()].filter((x) => x.n >= 1).sort((a, b) => b.n - a.n || String(a.p.label).localeCompare(String(b.p.label)));
-      blocks.push(S.panelBox("Wins & Rankings", [el("div", { class: "ti-leaders" }, [
-        col("Wins", byN(wins), "No wins in this selection."), col("Top 10s", byN(tops), "No top 10s in this selection."),
-        col("FedEx Cup", [], "Coming soon."), col("OWGR", [], "Coming soon."),
+      // (update 930) who led each tournament's field in the stat shown, and who was in its top 10 (not the official results:
+      // those are on Leaderboards › Historical)
+      const stat = sg ? (S.st?.cats?.length === 1 ? CATEGORIES.find(([k]) => k === S.st.cats[0])?.[1] || "SG: Total" : "SG: Total") : S.def.label;
+      blocks.push(S.panelBox("In the Field", [el("p", { class: "muted small" }, `By ${stat}: how many tournaments each player was the best in the field, and in the top 10 of the field (among those who played every round).`), el("div", { class: "ti-leaders ti-two-col" }, [
+        col("Best in the Field", byN(wins), "No one yet in this selection."), col("Top 10 in the Field", byN(tops), "No one yet in this selection."),
       ])], "full"));
     }
   }
 
   return blocks.length ? [el("div", { class: "sg-grid ti-grid" }, blocks)] : [];
+}
+
+/** (update 930) Leaderboards › Historical with no player picked: every tournament in the selection (when, how many played,
+ *  the official winner from the live feed's leaderboards, and the best in the field by strokes gained), then the official
+ *  wins and top 10s. */
+export function historyBlocks(S, slicedField) {
+  const all = S.eventsOf(slicedField.filter((p) => p.rounds.length)), list = [...all].reverse();
+  if (!list.length) return [el("section", { class: "panel" }, el("p", { class: "muted" }, "No tournaments in this selection."))];
+  const byName = new Map(slicedField.map((p) => [String(p.label || p.name || "").toLowerCase().replace(/[^a-z\s,]/g, "").split(/[\s,]+/).filter(Boolean).sort().join(" "), p]));
+  const nameBtn = (p) => (S.pickable(p.key) ? (() => { const b = el("button", { type: "button", class: "hb-link ti-name", title: `Open ${p.label}` }, S.starred(p.key, p.label)); b.addEventListener("click", () => S.opts.onPick(p.key)); return b; })() : el("span", { class: "ti-name" }, S.starred(p.key, p.label)));
+  const who = (nm) => { const p = byName.get(String(nm || "").toLowerCase().replace(/[^a-z\s,]/g, "").split(/[\s,]+/).filter(Boolean).sort().join(" ")); return p ? nameBtn(p) : el("span", { class: "ti-name" }, nm); };
+  const wCell = new Map(list.map((e) => [e, el("td", { class: "muted" }, "\u2026")]));
+  const recap = S.panelBox("Tournaments", [el("div", { class: "table-scroll ti-events-scroll", tabindex: "0" }, el("table", { class: "plain rankings ti-events" }, [
+    el("thead", {}, el("tr", {}, [el("th", {}, "Date"), el("th", {}, "Tournament"), el("th", { class: "num" }, "Players"), el("th", {}, "Winner"), el("th", {}, "Best in the field (SG)")])),
+    el("tbody", {}, list.map((e) => el("tr", {}, [el("td", { class: "ht-date" }, S.dateTxt(e.end)), el("td", {}, e.event), el("td", { class: "num" }, String(e.players)), wCell.get(e),
+      el("td", {}, e.best ? nameBtn(e.best.p) : "\u2014")])))]))], "full");
+  const winBox = el("div", { class: "ti-leaders ti-two-col" }, el("p", { class: "muted small" }, "Reading the official leaderboards\u2026")), note = el("p", { class: "muted small" }, "");
+  const wins = S.panelBox("Wins & Top 10s", [winBox, note], "full");
+  (async () => {
+    const PI = await import("./playerInsights.js");
+    const tc = new Map(); for (const p of slicedField) for (const rd of p.rounds) if (rd.tour) tc.set(rd.tour, (tc.get(rd.tour) || 0) + 1);
+    const code = PI.tourCodeOf([...tc].sort((a, b) => b[1] - a[1])[0]?.[0]);
+    if (!code) { for (const td of wCell.values()) td.textContent = "\u2014"; mount(winBox, el("p", { class: "muted small" }, "This tour has no official leaderboards in the live feed (the PGA TOUR and Korn Ferry Tour do).")); return; }
+    await PI.ensureResults(code, list.map((e) => String(e.year))).catch(() => null);
+    const W = new Map(), T10 = new Map(); let found = 0;
+    const add = (m, nm) => { const k = String(nm); m.set(k, (m.get(k) || 0) + 1); };
+    for (const e of list) { const B = PI.officialBoard(e.event, String(e.year), code), td = wCell.get(e); if (!B?.rows?.length) { td.textContent = "\u2014"; continue; } found++;
+      const w = B.rows.find((x) => /^1$/.test(String(x.pos || "").trim())) || (B.rows.filter((x) => /^T?1$/.test(String(x.pos || "").trim())).length === 1 ? B.rows.find((x) => /^T?1$/.test(String(x.pos || "").trim())) : null);
+      mount(td, w ? who(w.name) : B.final ? "\u2014" : el("span", { class: "muted" }, "in progress"));
+      if (B.final !== false) { if (w) add(W, w.name); for (const x of B.rows) { const n = Number(String(x.pos || "").replace(/^T/i, "")); if (Number.isFinite(n) && n >= 1 && n <= 10) add(T10, x.name); } } }
+    const col = (title, m, empty) => { const rows = [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])); return el("div", { class: "ti-col" }, [el("p", { class: "ti-col-title" }, title),
+      rows.length ? el("ol", { class: "ti-list ti-scroll", tabindex: "0", "aria-label": title }, rows.map(([nm, n]) => el("li", {}, [who(nm), el("strong", { class: "ti-v" }, String(n))]))) : el("p", { class: "muted small" }, empty)]); };
+    mount(winBox, [col("Wins", W, "No official wins in this selection yet."), col("Top 10s", T10, "No official top 10s in this selection yet.")]);
+    note.textContent = `From the official leaderboards the live feed saved: ${found} of the ${list.length} tournaments here${found < list.length ? " (the rest show \u2014)" : ""}.`;
+  })().catch((err) => { console.warn("historical", err); mount(winBox, el("p", { class: "muted small" }, "The official leaderboards couldn\u2019t be read just now.")); });
+  return [el("div", { class: "sg-grid ti-grid" }, [recap, wins])];
 }
 
 /** (update 760) a player's Ability vs Consistency: every player's strokes gained per round (across) against how much their rounds

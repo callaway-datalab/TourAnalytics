@@ -1466,3 +1466,6 @@ th.bs-lastn .bs-lastn-w { position: relative; top: 4px; }
 .sc .sc-why-t tr.sc-why-tot td { font-weight: 700; } .sc .sc-why-l li { margin: 6px 0; line-height: 1.45; }
 html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-color: var(--line); }
 .sc .sc-why-sub { margin: 6px 0 0; padding-left: 18px; } .sc .sc-why-sub li { margin: 4px 0; list-style: circle; }
+/* (update 930) Rankings' "In the Field" and Historical's "Wins & Top 10s": two columns, one on a phone */
+.ti-leaders.ti-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 640px) { .ti-leaders.ti-two-col { grid-template-columns: 1fr; } }

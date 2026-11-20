@@ -131,7 +131,10 @@ const sectionsFor = (kind) => {
     // (update 158: Stats split in two. A coach with more than one player starts Player Stats on the search.)
     // (update 505) Watchlist, Stats, Compare, Leaderboards
     // (update 833) Stats' views are its row of pages (the tabs that were on the page): each opens Stats on that view
-    ...STATS_VIEWS.filter(([v]) => !PLAY_VIEWS.includes(v) && (v !== "scout" || window.__taScout)).map(statsItem), /* (update 891: Scouting only with access) */ // (update 858: What's in the Bag and Practice & Goals are under Play)
+    // (update 930) Rankings (the old Leaderboards › Historical) right after Player Stats; Tournament Results moved to Leaderboards as Historical
+    ...STATS_VIEWS.filter(([v]) => v === "full").map(statsItem),
+    ["Rankings", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
+    ...STATS_VIEWS.filter(([v]) => v !== "full" && !PLAY_VIEWS.includes(v) && !FOLLOW_VIEWS.includes(v) && (v !== "scout" || window.__taScout)).map(statsItem), /* (update 891: Scouting only with access) */ // (update 858: What's in the Bag and Practice & Goals are under Play)
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
     // (update 817) the Player Dossier (Overview), Course Fit and Practice & Goals are tabs on Stats now
@@ -144,7 +147,7 @@ const sectionsFor = (kind) => {
   // (update 817) Play is Enter New Round only (Course Prep is under Analyze; Practice, Practice Week and Goals are a tab on Stats)
   // (update 818) Follow: the leaderboards (Historical) and the Event Feed (Live)
   const followItems = [
-    ["Historical", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
+    ...STATS_VIEWS.filter(([v]) => FOLLOW_VIEWS.includes(v)).map(statsItem), // (update 930: Historical, the old Tournament Results: Stats' own view, listed here)
     ["Live", "#/live", ["live"]],
   ];
   const planItems = [
@@ -162,11 +165,13 @@ const sectionsFor = (kind) => {
 const NAV = { admin: [["#/admin/clients", "people", "User Access", ["admin-clients", "admin-datasets"]]] };
 const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
 // (update 833) Stats' views, its row of pages; the one showing is ?view= in the address (Overview when there's none)
-export const STATS_VIEWS = [["full", "Player Stats"], /* (update 838: no Overview (it's on Home now); Full stats renamed) */ ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Comparisons"], ["scout", "Scouting"] /* (update 889) */, ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
+export const STATS_VIEWS = [["full", "Player Stats"], /* (update 838: no Overview (it's on Home now); Full stats renamed) */ ["results", "Historical"] /* (update 930: was Tournament Results, now under Leaderboards) */, ["fit", "Course Fit"], ["compare", "Comparisons"], ["scout", "Scouting"] /* (update 889) */, ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
 // (update 858) What's in the Bag and Practice & Goals are listed under Play (they're still Stats' views)
 export const PLAY_VIEWS = ["bag", "practice"];
 /** (update 858) can Stats switch from the view showing to `view` in place? Only within the same header (Stats or Play), so the header and its row of pages redraw when it changes */
-export const sameStatsHeader = (view) => PLAY_VIEWS.includes(view) === PLAY_VIEWS.includes(statsViewNow());
+export const FOLLOW_VIEWS = ["results"]; // (update 930) Stats' views listed under Leaderboards
+const headerOfView = (v) => (PLAY_VIEWS.includes(v) ? "plan" : FOLLOW_VIEWS.includes(v) ? "follow" : "data");
+export const sameStatsHeader = (view) => headerOfView(view) === headerOfView(statsViewNow());
 export const statsViewNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("view") || "full";
 const itemOn = (item, routeId) => {
   const [, , routes, opt = {}] = item;
@@ -429,7 +434,7 @@ export function holdToTalk(b, onHold = () => {}) {
 
 // (update 816) Search's extra words for each page, so "sg" or "drills" finds the right one
 const WORDS = { Stats: "strokes gained sg radar season form", "Player Dossier": "player profile report overview pdf", "Course Fit": "suits who next event projection",
-  Compare: "versus side by side products", Historical: "leaderboards rank ranking field follow", Live: "event feed live tournament scores follow", "Enter New Round": "add round entry scorecard",
+  Compare: "versus side by side products", Rankings: "leaderboards rank ranking field best in the field top 10", Historical: "tournament results recap winners wins top 10s past history leaderboards", Live: "event feed live tournament scores follow", "Enter New Round": "add round entry scorecard",
   "Course Prep": "maps strategy holes course report", Practice: "drills sessions range", "Practice Week": "plan drills schedule", Goals: "targets" };
 /** (update 816) the current player in the header: tap for their Dossier, × to let go of them */
 const playerOnly = () => { const st = window.__authState; return !!(st?.profile?.clientKey && !st.isAdmin && !st.isTeam); }; // a player is always themself
@@ -640,7 +645,7 @@ const SEED_SECTIONS = [
   ["full", "Player Stats", "Summary"], ["full", "Player Stats", "Best Stretches", "best stretch elite stretch #1 level elite round share", ".sg-full-top"], ["full", "Player Stats", "Getting better or worse?", "trend form"],
   ["full", "Player Stats", "SG Trends", "strokes gained trend"], ["full", "Player Stats", "SG Trends by Product", "equipment club ball"], ["full", "Player Stats", "Tournaments", "events"],
   ["full", "Player Stats", "Best & worst tournaments", "best week worst week"], ["full", "Player Stats", "Ability vs Consistency", "steadiness"], ["full", "Player Stats", "Where you stand", "rank"],
-  ["results", "Tournament Results", "Leaderboard", "finish"], ["results", "Tournament Results", "Scorecard", "holes"], ["fit", "Course Fit", "Best fits", "toughest fits"],
+  ["results", "Historical", "Leaderboard", "finish"], ["results", "Historical", "Scorecard", "holes"], ["results", "Historical", "Wins and top 10s", "winners"], ["fit", "Course Fit", "Best fits", "toughest fits"],
   ["compare", "Comparisons", "Players", "compare"], ["bag", "What's in the Bag", "All clubs", "witb equipment"], ["practice", "Practice & Goals", "Recommended practice", "drills"],
 ];
 const IDX_KEY = "ta.siteIdx";

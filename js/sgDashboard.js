@@ -411,6 +411,7 @@ export function sgDashboard(container, opts) {
     // the field over the same rounds
     const focusOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "focus"); // (update 505: Full stats unless Focus is picked)
     const resultsOn = !!(me && isSG() && !opts.emptyNote && st.view2 === "results"); // (update 756: Tournament Results)
+    const histOn = !me && isSG() && !opts.emptyNote && st.view2 === "results"; // (update 930: Leaderboards › Historical, no player picked: every tournament, the winners, wins and top 10s)
     // (update 817) Overview (the player's page: what Stats opens on), Course Fit (every course for them), Practice & Goals
     const tabOn = me && isSG() && !opts.emptyNote ? (["fit", "practice", "compare", "bag", ...(window.__taScout ? ["scout"] : [])].includes(st.view2) ? st.view2 : null) : !me && isSG() && !opts.emptyNote && window.__taScout && st.view2 === "scout" ? "scout" : null; // (update 928: Scouting with no player picked: the table, pick from there) // (update 838: Player Stats (full) unless another page is picked; no Overview)
     const noShotF = { ...f, cats: [], lie: [], dist: [], club: [], gear: [] };
@@ -452,6 +453,7 @@ export function sgDashboard(container, opts) {
         if (!me && st.statWanted === "form1") return [formBoard(slicedField)]; // (update 333: #1 Form)
         // (update 470) a player's strokes gained: Focus (the short story) or Full stats (everything), switched at the top
         // (update 756) Tournament Results: every tournament on this tour (any year), each against that week's field
+        if (histOn) return sgSummary.historyBlocks(S, slicedField); // (update 930)
         if (tabOn) return [statsTab(tabOn, me, st, opts)]; // (update 817)
         if (resultsOn) return sgResults.resultsView(S, nz(applyFilters(me.rounds, { tour: f.tour })), field.map((p) => ({ key: p.key, rounds: applyFilters(p.rounds, { tour: f.tour }) })));
         if (focusOn) { const fv = [].concat(sgFocus.focusView(S, focusMine, focusField, f, nz(applyFilters(me.rounds, { tour: f.tour })))), sb = sgSummary.steadyBox(S, slicedField);
