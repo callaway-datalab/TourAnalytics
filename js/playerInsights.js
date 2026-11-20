@@ -297,7 +297,7 @@ export function officialBoard(eventName, year, code, date = null) { // (update 9
 /** (update 916) every finished event's scorecards and official board, for the clutch numbers: [{ tid, name, year, cards, board }] */
 export async function clutchEvents(codes = ["R", "H"], years = []) {
   await Promise.all(codes.map((c) => ensureResults(c, years).catch(() => null)));
-  const list = []; for (const c of codes) for (const y of years) { const R = got(`results/${c}-${y}.json`); for (const [tid, e] of Object.entries(R?.events || {})) if (e?.final !== false && e?.rows?.length) list.push({ tid, name: e.name, year: String(y), board: e.rows, code: c }); }
+  const list = []; for (const c of codes) for (const y of years) { const R = got(`results/${c}-${y}.json`); for (const [tid, e] of Object.entries(R?.events || {})) if (e?.final !== false && e?.rows?.length) list.push({ tid, name: e.name, year: String(y), board: e.rows, code: c, start: e.start || null, end: e.end || null }); /* (update 937: the dates, to match the stats file's name) */ }
   const out = [], notes = []; let none = 0;
   for (let i = 0; i < list.length; i += 8) { const part = list.slice(i, i + 8); const got8 = await Promise.all(part.map((x) => loadCards(x.tid)));
     part.forEach((x, j) => { const c = got8[j]; if (!c) { none++; return; } if (c.note) notes.push({ tid: x.tid, name: x.name, year: x.year, note: c.note }); if (c.rounds && Object.values(c.rounds).some((rr) => Object.keys(rr || {}).length)) out.push({ ...x, cards: c }); }); }

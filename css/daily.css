@@ -1484,3 +1484,14 @@ html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-colo
 .tr-det .tr-det-t tr.tr-ev { cursor: pointer; } .tr-det .tr-det-t tr.tr-ev:hover td { background: rgba(255,255,255,0.04); }
 /* (update 936) Tournament Results: the tour and season pickers side by side */
 .tr-pick-sels { display: flex; gap: 8px; flex-wrap: wrap; }
+/* (update 937) the cards' lists fit the page: names and results wrap, no sideways scrolling */
+.tr-det .tr-lb-wrap { overflow-x: visible; }
+.tr-det .tr-det-t { width: 100%; table-layout: auto; }
+.tr-det .tr-det-t th { white-space: normal !important; vertical-align: bottom; }
+.tr-det .tr-det-t td { white-space: normal !important; vertical-align: top; }
+.tr-det .tr-det-t td:first-child { white-space: nowrap !important; }
+.tr-det .tr-det-t td.tr-det-nm { min-width: 140px; }
+.tr-det .tr-det-sub { display: block; font-size: 0.82em; opacity: 0.85; }
+.tr-det .tr-det-miss { display: block; font-size: 0.8em; }
+@media (max-width: 640px) { .tr-det .tr-det-t { font-size: 0.8rem; } .tr-det .tr-det-t th, .tr-det .tr-det-t td { padding: 6px 4px; } .tr-det .tr-det-t td.tr-det-nm { min-width: 90px; } }
+@media (max-width: 640px) { .tr-det .tr-det-t { font-size: 0.74rem; } .tr-det .tr-det-t th { font-size: 0.6rem; letter-spacing: 0.02em; } .tr-det .tr-det-t th, .tr-det .tr-det-t td { padding: 5px 3px; } .tr-det .tr-det-t td.tr-det-nm { min-width: 0; } .tr-det { padding: 10px 8px; } }
