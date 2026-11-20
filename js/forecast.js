@@ -401,7 +401,9 @@ function learn(D, { tour = null } = {}) {
   // trend). Carrying a trend forward and a fully-trusted age curve lifted young and improving players too far (a player
   // with a handful of rounds projected into the top 20 three seasons out)
   const sumY = cmpErr.reduce((t, c) => t + (c?.yours || 0), 0), sumD = cmpErr.reduce((t, c) => t + (c?.dataOnly || 0), 0);
-  const useData = cmpErr.some(Boolean) && sumD <= sumY, ageK = useData ? ageOpt.kc : 0, TREND_ON = useData ? 0 : 1;
+  // (update 929) no trend carried forward, ever: a jump in the latest season isn't assumed to continue (one good year can be a
+  // peak); the forecast is the weighted average of every season (recent ones counting most) pulled toward average, plus age
+  const useData = true, ageK = ageOpt.kc, TREND_ON = 0; void sumD; void sumY;
   for (const h of [1, 2, 3]) for (const x of resid[h]) { const pv = useData && x.preds ? x.preds[AGE_OPTS.indexOf(ageOpt)] : x.uPred; x.r = x.act - pv; x.z = x.r / x.sd; }
   const trustAt = (age) => trustOf(M, ageK)[ageIdx(age)];
   // (update 433) the signals: standardized, then added one at a time while they make the unseen seasons' forecasts

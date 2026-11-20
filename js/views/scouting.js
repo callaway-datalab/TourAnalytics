@@ -306,6 +306,21 @@ export async function scoutTab(box, key0, name0) {
         comp8.length ? el("p", { class: "sc-likes" }, [el("b", {}, `Players at his level with a game like his: `), `past seasons ranked about where his is (${ord(sc.levelBand.lo)}–${ord(sc.levelBand.hi)} of a ${cur.of}-player season) with the same strengths and weaknesses${r.age != null ? " and a similar age" : ""}. Closest: `, comp8.slice(0, 3).map((c) => `${c.x.nm} (${c.x.y}: ${ord(c.x.rank)} of ${c.x.of}, then ${ord(c.x.next.rank)}${c.x.next.partial ? " so far" : ""})`).join(", "), `. Of the ${comp8.length} most similar, ${up8} improved the next season.`]) : null,
         el("p", { class: "muted small" }, `"Likely" range: the middle half of the outcomes the forecaster expects. Ranks are by strokes gained per round among the ${tour || "tour"}'s players with ${MINTXT}.`)]);
     }
+    // (update 929) how much of a season's difference from a player's usual shows up again the next season, learned from every
+    // tour in the file: each season (30+ rounds) with up to 3 seasons before it (40+ rounds) and a season after (30+ rounds);
+    // the next season's difference from the same usual against this season's, split into ball-striking and short game
+    let RET = null;
+    function retention() { if (RET) return RET; const xs = [];
+      for (const T of tours) { const B0 = build(T), ys = B0.years;
+        for (const pl of B0.P) for (let i = 1; i < ys.length - 1; i++) { const cur = B0.season[ys[i]].by.get(pl.k), nx = B0.season[ys[i + 1]].by.get(pl.k); if (!cur || !nx || cur.n < 30 || nx.n < 30) continue;
+          const prev = ys.slice(Math.max(0, i - 3), i).map((y) => B0.season[y].by.get(pl.k)).filter(Boolean), pn = prev.reduce((t, o) => t + o.n, 0); if (pn < 40) continue;
+          const bse = prev.reduce((t, o) => t + o.sg * o.n, 0) / pn, bc = (c) => prev.reduce((t, o) => t + o.cat[c] * o.n, 0) / pn;
+          xs.push({ x: cur.sg - bse, bs: cur.cat.OTT + cur.cat.APP - bc("OTT") - bc("APP"), sh: cur.cat.ARG + cur.cat.PUTT - bc("ARG") - bc("PUTT"), y: nx.sg - bse }); } }
+      const S = (f) => xs.reduce((t, o) => t + f(o), 0), sxx = S((o) => o.x * o.x), keep = sxx ? Math.max(0, Math.min(1, S((o) => o.x * o.y) / sxx)) : 0;
+      const a11 = S((o) => o.bs * o.bs), a12 = S((o) => o.bs * o.sh), a22 = S((o) => o.sh * o.sh), y1 = S((o) => o.bs * o.y), y2 = S((o) => o.sh * o.y), det = a11 * a22 - a12 * a12;
+      let kb = null, ks = null; if (Math.abs(det) > 1e-9) { kb = (y1 * a22 - y2 * a12) / det; ks = (a11 * y2 - a12 * y1) / det; }
+      const split = xs.length >= 60 && kb != null && kb >= 0 && ks >= 0 && kb <= 1.1 && ks <= 1.1;
+      return (RET = { n: xs.length, keep, kb: split ? Math.min(1, kb) : null, ks: split ? Math.min(1, ks) : null, split }); }
     // (update 928) the numbers behind the trajectory, so anyone can check them: the two 12-month stretches side by side (the
     // same numbers the Stats page gives for those dates), whether the change is bigger than luck, which parts of the game it
     // came from, and how much of a change like it usually lasts (learned from this file by the forecaster)
@@ -325,13 +340,28 @@ export async function scoutTab(box, key0, name0) {
       const dC = PI.CATS.map((c) => [c, tj.c1[c] - tj.c0[c]]).sort((a, b) => (tj.change >= 0 ? b[1] - a[1] : a[1] - b[1]));
       const bs = dC.filter(([c]) => c === "OTT" || c === "APP").reduce((t, [, v]) => t + v, 0), sh = dC.filter(([c]) => c === "ARG" || c === "PUTT").reduce((t, [, v]) => t + v, 0);
       const b2 = [el("b", {}, "Where it came from: "), dC.map(([c, v]) => `${NM[c].toLowerCase()} ${sg2(v)}`).join(", "), `. Ball-striking (tee and approach) ${sg2(bs)}, short game (around the green and putting) ${sg2(sh)}.`];
-      // will it last? (the forecaster's learned carry for each part: how much of a season above or below average shows up in the next)
-      const carry = ensureFc().info?.params?.carry;
-      let b3 = null;
-      if (carry) { const lasting = PI.CATS.reduce((t, c) => t + (carry[c] ?? 0) * (tj.c1[c] - tj.c0[c]), 0), pc = (c) => `${Math.round((carry[c] ?? 0) * 100)}%`;
-        b3 = [el("b", {}, "Will it last? "), `Not every change sticks. In this file, of a season's difference, about ${pc("APP")} carries into the next season for approach, ${pc("OTT")} off the tee, ${pc("ARG")} around the green and ${pc("PUTT")} for putting. Applied to ${last}'s changes: about ${sg2(lasting)} of the ${sg2(tj.change)} is the kind that usually lasts.`,
-          fc?.years?.[0] ? ` That's why the forecast for ${fc.years[0].year} is ${sg2(fc.years[0].total)} per round (≈${ord(fc.years[0].rank)} on the PGA)${rkNow ? `, against ${ord(rkNow)} on the ${TS(tj.T)} this season` : ""}.` : ""]; }
-      else b3 = [el("b", {}, "Will it last? "), ensureFc().busy ? "Working it out…" : "—"];
+      // (update 929) will it last? Against his usual over several seasons, not just the year before: what a season this far
+      // from a player's usual has actually turned into the next season, across this file
+      const RT = retention(), b3 = [el("b", {}, "Will it last? ")], sub = [];
+      const p0 = allRows().find((x) => x.k === r.k)?.p, from = END - 4 * YEAR, to = END - YEAR;
+      const pre = p0 ? p0.rs.filter((x) => { const t = dOf(x); return t > from && t <= to; }) : [];
+      const B0 = build(tj.T), seas = B0.years.map((y) => [y, B0.season[y].by.get(r.k)]).filter(([, o]) => o);
+      if (pre.length >= 40) {
+        const base = avg(pre, tot), bC = (c) => avg(pre, (x) => inCat(x, c)), gap = tj.now - base;
+        const gbs = tj.c1.OTT + tj.c1.APP - bC("OTT") - bC("APP"), gsh = tj.c1.ARG + tj.c1.PUTT - bC("ARG") - bC("PUTT");
+        b3.push(`His usual: ${sg2(base)} strokes gained per round over the 3 years before (${winTxt(from, to)}, ${pre.length} rounds). The last 12 months (${sg2(tj.now)}) are ${sg2(gap)} ${gap >= 0 ? "above" : "below"} his usual.`);
+        if (seas.length) sub.push(`Season by season: ${seas.map(([y, o]) => `${y}${y === B0.lastY ? " so far" : ""} ${sg2(o.sg)}`).join(" · ")}.`);
+        const full = seas.filter(([y]) => y !== B0.lastY), best = full.length ? full.reduce((m, x) => (x[1].sg > m[1].sg ? x : m)) : null;
+        if (best && tj.now > best[1].sg + 0.15) sub.push(`A career high: better than any full season on record (his best was ${sg2(best[1].sg)} in ${best[0]}). Career-best stretches usually come back toward a player's usual.`);
+        else if (best && full.length >= 2 && tj.now < Math.min(...full.map((x) => x[1].sg)) - 0.15) sub.push(`A career low: worse than any full season on record. Career-worst stretches usually bounce back toward a player's usual.`);
+        if (RT && RT.n >= 30) {
+          const kept = RT.split ? RT.kb * gbs + RT.ks * gsh : RT.keep * gap, guess = base + kept, pc = (v) => `${Math.round(Math.max(0, v) * 100)}%`;
+          sub.push(`What happened to others: across ${RT.n.toLocaleString()} player-seasons in this file, when a season was above or below the player's usual (his previous up to 3 seasons), the next season kept on average ${RT.split ? `${pc(RT.kb)} of a ball-striking (tee and approach) difference and ${pc(RT.ks)} of a short-game (around the green and putting) difference` : `${pc(RT.keep)} of the difference`}; the rest went back toward his usual.`);
+          sub.push(`Applied to ${last} (ball-striking ${sg2(gbs)}, short game ${sg2(gsh)} against his usual): about ${sg2(kept)} of the ${sg2(gap)} is likely to stay, so a fair guess for next season is about ${sg2(guess)} per round, ${Math.abs(kept) < Math.abs(gap) ? "between his usual and his last 12 months" : "about where he is now"}.`);
+        } else sub.push("Too few seasons in the file yet to say how much of a change like this usually lasts.");
+        if (fc?.years?.[0]) sub.push(`The full forecast (the Outlook tab) also weighs how strong his fields were and his age: ${sg2(fc.years[0].total)} per round in ${fc.years[0].year} (≈${ord(fc.years[0].rank)} on the PGA)${rkNow ? `; ${ord(rkNow)} on the ${TS(tj.T)} this season` : ""}.`);
+      } else b3.push(`Not enough earlier rounds to compare with his usual (${pre.length} in ${winTxt(from, to)}; at least 40 needed). Treat a jump on this little history with caution.`);
+      if (sub.length) b3.push(el("ul", { class: "sc-why-sub" }, sub.map((t) => el("li", {}, t))));
       return el("div", { class: "sc-why" }, [el("p", { class: "ip-kick" }, `Why "${TRJ[tj.k][0].replace(/^\S+\s/, "")}": the numbers (check them on Player Stats with these dates)`), tbl,
         el("ul", { class: "ip-bul sc-why-l" }, [el("li", {}, b1), el("li", {}, b2), el("li", {}, b3)]),
         el("p", { class: "muted small" }, `Strokes gained per round against the field in each event, on the ${TS(tj.T)}, every round in each stretch.`)]);
@@ -395,7 +425,7 @@ export async function scoutTab(box, key0, name0) {
         el("li", {}, [el("b", {}, "Comps (from baseball's PECOTA and FiveThirtyEight's NBA CARMELO). "), `Every player-season in the file is a profile: strokes gained per round and in each part of the game, the change from the season before, age (when the file has birth dates), seasons on the tour and rounds played. Each is put on the same scale (standard deviations across every player-season) and weighted (strokes gained per round counts most). A player's latest season is matched with the nearest past player-seasons that have a season after them. Similarity: 100 identical, 0 as different as a typical pair of players.`]),
         el("li", {}, [el("b", {}, "Predictions (next season, three seasons out, the odds). "), "The site's one forecaster, the same as the Outlook tab, built the way baseball's projection systems (Marcel, Steamer) and Data Golf are: each player's rounds over recent seasons, newer ones weighted more (how much more is learned from this file); every round adjusted for how strong its field was (which also puts the tours on one scale); pulled toward the tour average by how many rounds there are; an age curve learned from how players' seasons changed with age; ranges set so that 8 in 10 past seasons it hadn't seen landed inside; and checked by forecasting each past season from only the seasons before it. The odds of a top-10 / 50 / 100 season come from playing the next season out thousands of times for the whole field."]),
         el("li", {}, [el("b", {}, "Ratings, 0-100. "), "The percentile: the share of the latest full season's ranked players the number beats, so 50 is the middle player, 90 the top 10% and 99 the best. Now: this season. Next season and Ceiling: the projection and a good outcome (its 80th percentile). One for each part of the game the same way. (Baseball scouts use a 20-80 scale; a percentile says the same thing in plain numbers.)"]),
-        el("li", {}, [el("b", {}, "Trajectory and the biggest improvers. "), `His strokes gained per round over the last 12 months (${W1}) against the 12 months before (${W0}), on his own tour, every round in each stretch: the same numbers Player Stats gives for those dates. Rising or Slipping only when the change is bigger than luck: a tour player's score against the field swings a couple of strokes from one round to the next, so two averages of about 60 rounds can differ by around half a stroke by chance alone; the change has to clear about twice that wobble (about 95% sure) to be called, once (about 84%) for "Probably". A player's report then shows which parts of the game the change came from, and how much of a change like it usually carries into the next season (learned from this file by the forecaster, from how players' seasons actually carried over).`]),
+        el("li", {}, [el("b", {}, "Trajectory and the biggest improvers. "), `His strokes gained per round over the last 12 months (${W1}) against the 12 months before (${W0}), on his own tour, every round in each stretch: the same numbers Player Stats gives for those dates. Rising or Slipping only when the change is bigger than luck: a tour player's score against the field swings a couple of strokes from one round to the next, so two averages of about 60 rounds can differ by around half a stroke by chance alone; the change has to clear about twice that wobble (about 95% sure) to be called, once (about 84%) for "Probably". A player's report then shows which parts of the game the change came from, and whether it's likely to last: his last 12 months against his usual over the 3 years before, whether it's a career high or low, and how much of a season's difference from a player's usual actually showed up again the next season across every player-season in this file (ball-striking and short game separately).`]),
         el("li", {}, [el("b", {}, "Before the breakout. "), "The past seasons most like a player's latest that came the year before a top-10 season (from outside the top 10): the paths successful players took."]),
         el("li", {}, [el("b", {}, "Limits. "), `The file covers ${B.years[0]}-${B.years.at(-1)}: comps and odds learn from those seasons only (${M.pool.length} player-seasons with a season after them), so they get sharper as seasons are added. The current season counts as it stands so far.`])])]), bridgeCard]);
     }

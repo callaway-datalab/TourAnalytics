@@ -1465,3 +1465,4 @@ th.bs-lastn .bs-lastn-w { position: relative; top: 4px; }
 .sc .sc-why-t th small { display: block; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted, #8e8e93); }
 .sc .sc-why-t tr.sc-why-tot td { font-weight: 700; } .sc .sc-why-l li { margin: 6px 0; line-height: 1.45; }
 html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-color: var(--line); }
+.sc .sc-why-sub { margin: 6px 0 0; padding-left: 18px; } .sc .sc-why-sub li { margin: 4px 0; list-style: circle; }
