@@ -228,6 +228,11 @@ export function strategyOf(recs, par, geo = {}) {
     const own = r.apIdx != null && r.qs[r.apIdx + 1] === q && r.side ? r.side : null;
     return { r, x: q[1], y: q[2], lie: LIE[q[3]] || "other", d: q[4], side: own || sideGeo(r, q), v: regV(r, q[0], K) }; }));
   const missPts = shotPts.filter((p) => p.lie !== "green" && p.lie !== "water" && p.d != null && p.d <= 30 && p.side);
+  // (update 945) a fairway (or fringe) miss right at the green's edge, within 2.5 yds of shots played from the green: the fringe.
+  // It scores well because it's nearly on the green, not because it's a safe place to miss: one a few yards longer is in the
+  // rough or worse. Such a spot is never the best or second best miss (it can still be counted, and be the worst)
+  if (geo.ppy) { const gp = shotPts.filter((p) => p.lie === "green"); if (gp.length) { const GG = gridIdx(gp), R0 = 2.5 * geo.ppy;
+    for (const p of missPts) if (p.lie === "fairway" && GG.near(p.x, p.y, R0).length) p.edge = true; } }
   let spotOrder = null;
   if (geo.ppy && missPts.length >= MIN_N) {
     // 10 yds, widened to 15 when that's too few; each circle then moved to the middle of its misses and counted again
@@ -237,9 +242,9 @@ export function strategyOf(recs, par, geo = {}) {
     // best- or worst-scoring slice of one (that made a left bunker look worse than a right one that really was worse)
     // (update 752) every shot off the green the circle tool shows (with every shot pooled, the putts on the green beside a miss
     // spot would swamp it: a miss is judged on the misses)
-    let allMiss = shotPts.filter((p) => p.lie !== "green"); // (update 722: every shot the circle tool shows, whatever its lie)
-    const gen = (minN, radii) => {
-      const mS = thin(missPts), aS = thin(allMiss), out = [], seen = new Set(), GM = gridIdx(mS), GAs = gridIdx(aS), GA = gridIdx(allMiss); // (update 716: a grid, the search on a sample, the counts exact)
+    let withLucky = missPts; let allMiss = shotPts.filter((p) => p.lie !== "green"); // (update 722: every shot the circle tool shows, whatever its lie)
+    const gen = (minN, radii, loose = null) => { // (update 946) loose: the worst miss's search (its own points, any mix of lies)
+      const mS = thin(loose || missPts), aS = thin(allMiss), out = [], seen = new Set(), GM = gridIdx(mS), GAs = gridIdx(aS), GA = gridIdx(allMiss); // (update 716: a grid, the search on a sample, the counts exact)
       for (const ry of radii) for (const c of startsOf(mS, ry)) {
         const rr = ry * geo.ppy, inR = (x, y) => GM.near(x, y, rr, (p) => p.lie === c.lie);
         for (const shift of [true, false]) { // (update 714: also the circle right where this miss is, not only settled on its cluster)
@@ -275,7 +280,7 @@ export function strategyOf(recs, par, geo = {}) {
         }
         x = Math.round(x); y = Math.round(y); inside = GA.near(x, y, rr); // (update 715: counted from the centre as drawn)
         mem = inside.filter((p) => p.lie === c.lie);
-        if (mem.length < minN || mem.length < 0.6 * inside.length) continue;
+        if (mem.length < minN || (!loose && mem.length < 0.6 * inside.length)) continue;
         // (update 625) every circle size (not just the first that's big enough), so a tight cluster (the rough left of a
         // green) is a spot of its own rather than swallowed by a bigger one nearby
         const sig = `${c.lie}|${ry}|${Math.round(x / (3 * geo.ppy))}|${Math.round(y / (3 * geo.ppy))}`;
@@ -296,6 +301,7 @@ export function strategyOf(recs, par, geo = {}) {
         const nb = GL.near(p.x, p.y, R, (q) => q !== p);
         if ((nb.length >= 4 && nb.filter((q) => q.lie === "bunker").length / nb.length >= 0.4) || GL.near(p.x, p.y, 2 * geo.ppy, (q) => q.lie === "bunker").length > 0) p.lucky = true; } // (or a bunker miss within 2 yds)
       allMiss = shotPts.filter((p) => p.lie !== "green"); // (update 752: off the green) (update 657: counted in any circle they're inside, just not used to place one; 722: every shot the circle tool shows)
+      withLucky = missPts.slice(); // (update 946: a lucky lie beside a bunker is no place to aim, but it can be the worst place to miss)
       for (let i = missPts.length - 1; i >= 0; i--) if (missPts[i].lucky) missPts.splice(i, 1); }
     // (update 753) and when that's too few places, smaller ones (5+ shots) before falling back to misses grouped by side: the
     // circles then are what Cal's text recounts, so the worst miss isn't lost when its numbers are checked
@@ -325,6 +331,7 @@ export function strategyOf(recs, par, geo = {}) {
     // scored well by luck. Within 6 yds of a spot's middle, if a quarter or more of all the misses (any lie) are in a
     // bunker, it can't be the best or second best miss (it can still be the worst)
     const risky = (g) => {
+      if (g.mem.filter((p) => p.edge).length >= 0.4 * g.mem.length) return true; // (update 945: mostly the fringe at the green's edge)
       if (lieMost(g.mem) === "bunker") return false;
       if (g.mem.filter((p) => p.r.bb).length < g.mem.length / 2) return false; // (update 635) beside a bunker is fine; in front of one isn't
       // (update 634) a third or more within 5 yds (was a quarter within 6)
@@ -340,14 +347,23 @@ export function strategyOf(recs, par, geo = {}) {
     const byAvg = [...named].sort((a, b) => adj(a) - adj(b) || b.n - a.n), pick = [];
     // (update 724) the best and 2nd best (safe to aim at, apart); then the worst: the worst-scoring spot of every spot with
     // MIN_N or more (its average pulled toward every miss's by its size, so 16 misses at 4.81 beats 8 at 4.75), apart from both
-    for (const g of byAvg) { if (pick.length >= 2) break; if (risky(g) || shaky(g)) continue; if (pick.every((x) => apart(x, g))) pick.push(g); }
-    if (pick.length === 2) {
+    // (update 946) a second best has to be a good miss (no worse than the average miss): long rough at 4.71 when misses
+    // average 4.32 is no place to aim, it's a place to avoid
+    for (const g of byAvg) { if (pick.length >= 2) break; if (risky(g) || shaky(g)) continue; if (pick.length && adj(g) > allAvg) break; if (pick.every((x) => apart(x, g))) pick.push(g); }
+    // (update 946) and the worst is looked for even when there's only a best: it had fallen back to misses grouped by side,
+    // which called whatever came second the worst (a 64-shot fairway spot) while 65 long-rough misses went unnamed
+    if (pick.length >= 1) {
       const adjW = (g) => (g.n * g.avg + MIN_N * allAvg) / (g.n + MIN_N);
-      const pool = [...named, ...(cand.some((g) => g.mem.length < MIN_T) ? [] : nameAll(gen(MIN_N, R_SET)))];
-      let w = pool.filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => adjW(b) - adjW(a) || b.n - a.n)[0];
+      // (update 945) every spot of 5+ misses can be the worst (its average pulled toward everyone's by its size, so a handful of
+      // bad holes can't win it on their own): the rough long or right of a green that rarely sees 8 misses was never in the running
+      // (update 946) and the worst's own search: every miss (a lucky one beside a bunker too), and a lie mixed in with
+      // others (10 rough misses inside the short-right fairway; long rough with bunker and fairway shots round it): the
+      // 60% rule keeps a place to aim at clean, but the worst place to miss doesn't have to be
+      const pool = [...named, ...(cand.some((g) => g.mem.length < MIN_T) ? [] : nameAll(gen(MIN_N, R_SET))), ...nameAll(gen(5, R_SET)), ...nameAll(gen(MIN_N, R_SET, withLucky))];
+      let w = pool.filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick.at(-1).avg).sort((a, b) => adjW(b) - adjW(a) || b.n - a.n)[0];
       // (update 614) none with MIN_N: a smaller one (5+ misses)
-      if (!w) w = nameAll(gen(5, R_SET)).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick[1].avg).sort((a, b) => adjW(b) - adjW(a) || b.n - a.n)[0];
-      if (w) pick.push(w);
+      if (!w) w = nameAll(gen(5, R_SET)).filter((g) => pick.every((x) => apart(x, g)) && g.avg > pick.at(-1).avg).sort((a, b) => adjW(b) - adjW(a) || b.n - a.n)[0];
+      if (w) pick.push(w); else if (pick[1]) pick[1] = { ...pick[1], notWorst: true }; // (update 946: no worse spot: the second is still the 2nd best, never called the worst)
     }
     // (update 724) two spots with the same name: each said with how far it is from the pin
     const labOf = (g) => { const same = pick.filter((x) => x !== g && lab(x.k) === lab(g.k)).length; if (!same) return lab(g.k); const ds = g.mem.map((p) => p.d).filter((v) => v != null); return ds.length ? `${lab(g.k)}, about ${Math.round(mean(ds))} yds from the pin` : lab(g.k); };
@@ -374,7 +390,7 @@ export function strategyOf(recs, par, geo = {}) {
     const atOf = (g, tone) => (g.at ? [g.at(tone)] : [circ(g.rs, apPt, tone, TEE_LIM)].filter(Boolean)); // (update 610: a spot's own circle)
     items.push({ k: "miss", h: "Best miss", t: `If you miss the green, miss ${b1.lab}: ${f2(b1.avg)} (${nTxt(b1.n)}).`, at: atOf(b1, "good") });
     // (update 615) only two spots: the other is the worst (red), not a second best
-    if (order.length === 2) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "bad") });
+    if (order.length === 2 && !b2.notWorst) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${b2.lab} ${vn(b2.avg, b2.n)}.`, at: atOf(b2, "bad") });
     // (update 634) ranked on an average weighed for its sample size: a second best with a lower average says why it's second
     else items.push({ k: "miss", h: "2nd best miss", t: `Second best: ${b2.lab} ${vn(b2.avg, b2.n)}${b2.avg < b1.avg ? `: a lower average, but on too few samples to rank above the best miss` : ""}.`, at: atOf(b2, "ok") });
     if (order.length >= 3) items.push({ k: "miss", h: "Worst miss", t: `Worst: ${w.lab} ${vn(w.avg, w.n)}.`, at: atOf(w, "bad") });

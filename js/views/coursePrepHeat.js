@@ -471,7 +471,7 @@ export async function drawHeat(ctx, course) {
     const diff = same.length >= 5 ? a - avg(same) : null;
     const lies = new Map(); for (const q of inside) (lies.get(q.lie) || lies.set(q.lie, []).get(q.lie)).push(q);
     const nm = (l) => ({ green: "Green", fairway: "Fairway", rough: "Rough", bunker: "Bunker", tee: "Tee", water: "Water" }[l] || String(l).replace(/^./, (c) => c.toUpperCase()));
-    const mine = who ? inside.filter((q) => q.key === who.key) : [];
+    const mine = who ? inside.filter((q) => q.key === who.key && !st.spotOff.has(q.lie)) : []; // (update 946: the lies left out of All are left out of the player's line too)
     const ud = (qs) => `${Math.round((100 * qs.filter((q) => q.v <= 2).length) / qs.length)}%`; // (update 502: holed in two from there)
     // (update 501) a small popup: the circle's size, the player's own shots, and the shots by lie
     const basedOn = el("p", { class: "muted sh-spot-note" }, k ? `Every shot played from here, as if you got here in ${k} ${k === 1 ? "shot" : "shots"}` : "Based on every shot played from here"); // (update 505; 747: every shot, as in regulation)
