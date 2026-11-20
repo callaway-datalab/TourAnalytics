@@ -1477,3 +1477,8 @@ html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-colo
 .ti-events tr.ti-ev-row { cursor: pointer; } .ti-events tr.ti-ev-row:hover td { background: rgba(255,255,255,0.04); } .ti-events tr.ti-ev-row.on td { background: rgba(212,180,131,0.12); }
 .ti-detail-wrap { grid-column: 1 / -1; display: grid; gap: 14px; } .ti-detail-wrap:empty { display: none; }
 .tr-detail { display: grid; gap: 14px; }
+/* (update 935) Tournament Results' cards open the tournaments behind them */
+.tr-sc-card.tap { cursor: pointer; transition: border-color .15s; } .tr-sc-card.tap:hover { border-color: rgba(212,180,131,0.55); }
+.tr-sc-card.on { border-color: var(--gold, #d4b483); background: rgba(212,180,131,0.10); }
+.tr-sc-det:empty { display: none; } .tr-det { margin: 10px 0 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(212,180,131,0.35); background: rgba(255,255,255,0.02); }
+.tr-det .tr-det-t tr.tr-ev { cursor: pointer; } .tr-det .tr-det-t tr.tr-ev:hover td { background: rgba(255,255,255,0.04); }

@@ -118,19 +118,56 @@ export function resultsView(S, rounds, field) {
     const n = inYr.length, posN = (e) => { const p = fin.get(e.key)?.pos; return p && /^T?\d+$/i.test(p) ? Number(String(p).replace(/^T/i, "")) : null; };
     const missed = inYr.filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; }).length;
     const places = inYr.map(posN).filter((v) => v != null), wins = places.filter((v) => v === 1).length, t10 = places.filter((v) => v <= 10).length;
-    const card = (label, big, sub, c0 = "") => el("div", { class: `tr-sc-card ${c0}` }, [el("span", { class: "tr-sc-l" }, label), el("b", {}, big), sub ? el("small", {}, sub) : null]);
-    const base = [card("Events", String(n), st.resYear === "all" ? "all seasons" : st.resYear), card("Cuts made", `${n - missed} of ${n}`, n ? `${Math.round((100 * (n - missed)) / n)}%` : ""), card("Wins", String(wins), wins ? "" : "\u00a0", wins ? "pos" : ""), card("Top 10s", String(t10), places.length ? `of ${places.length} with a finish` : "no official finishes"),
-      card("Average finish", places.length ? ord(Math.round(places.reduce((a, b) => a + b, 0) / places.length)) : "—", places.length ? "made cuts" : "")];
-    mount(sumBox, el("div", { class: "tr-sc-cards" }, base));
+    // (update 935) every card opens the tournaments behind it (tap again to close); a tournament in a list opens it below
+    const detBox = el("div", { class: "tr-sc-det" }); let openK = null, cardsEl = null;
+    const card = (label, big, sub, c0 = "", k = null) => { const n0 = el("div", { class: `tr-sc-card ${c0}${k ? " tap" : ""}${k && k === openK ? " on" : ""}`, ...(k ? { role: "button", tabindex: "0", title: "Show the tournaments" } : {}) }, [el("span", { class: "tr-sc-l" }, label), el("b", {}, big), sub ? el("small", {}, sub) : null]);
+      if (k) { const go = () => { openK = openK === k ? null : k; cardsEl?.querySelectorAll(".tr-sc-card.tap").forEach((c) => c.classList.toggle("on", c === n0 && !!openK)); showDet(); }; n0.addEventListener("click", go); n0.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); }
+      return n0; };
+    const openEv = (name, year) => { const e = inYr.find((x) => x.year === String(year) && (evMatch(x.event, name) || x.event === name)); if (!e) return null; return () => { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; S.draw(); toDetail(); }; };
+    const tpS = (v) => (v == null ? "—" : v === 0 ? "E" : v > 0 ? `+${v}` : `−${-v}`);
+    const finTxt = (e) => { const p = fin.get(e.key)?.pos; return p ? (/^\d+$/.test(p) ? ord(Number(p)) : p) : "—"; };
+    const dTxt = (e) => new Date(`${String(e.end).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) });
+    const table = (heads, rows, note) => el("div", {}, [!rows.length ? el("p", { class: "muted" }, st.resYear === "all" ? "None on record." : `None in ${st.resYear}.`) : null, rows.length ? el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t tr-det-t" }, [el("thead", {}, el("tr", {}, heads.map((h, i) => el("th", { class: i >= 1 ? "num" : "" }, h)))),
+      el("tbody", {}, rows.map(([cells, go]) => { const tr = el("tr", { class: go ? "tr-ev" : "", tabindex: go ? "0" : null, title: go ? "Open this tournament" : null }, cells.map((c, i) => el("td", { class: i >= 1 ? "num" : "" }, c))); if (go) { tr.addEventListener("click", go); tr.addEventListener("keydown", (k) => { if (k.key === "Enter") go(); }); } return tr; }))])) : null,
+      note ? el("p", { class: "muted small" }, note) : null]);
+    const evRows = (list) => list.map((e) => [[dTxt(e), e.event, finTxt(e)], openEv(e.event, e.year)]);
+    let CL = null; // (the clutch numbers, once they're in)
+    const showDet = () => { if (!openK) { mount(detBox, null); return; } const D = DETAIL[openK]?.(); mount(detBox, D ? el("div", { class: "tr-det" }, D) : null); };
+    const DETAIL = {
+      events: () => [el("p", { class: "fx-eyebrow" }, "Every tournament he played"), table(["Date", "Tournament", "Finish"], evRows(inYr))],
+      cuts: () => { const mc = inYr.filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; });
+        return [el("p", { class: "fx-eyebrow" }, mc.length ? "Missed cuts" : "Made every cut"), table(["Date", "Tournament", "Finish"], evRows(mc), "A missed cut: the official finish says CUT, or (no official result) two rounds or fewer.")]; },
+      wins: () => [el("p", { class: "fx-eyebrow" }, "Wins"), table(["Date", "Tournament", "Finish"], evRows(inYr.filter((e) => posN(e) === 1)), CL?.winList?.length ? `Where he stood going into the final round: ${CL.winList.filter((w) => st.resYear === "all" || w.year === st.resYear).map((w) => `${w.ev} ${w.back ? `${w.back} back` : "leading"}`).join(" · ")}.` : null)],
+      top10: () => [el("p", { class: "fx-eyebrow" }, "Top 10 finishes"), table(["Date", "Tournament", "Finish"], evRows(inYr.filter((e) => posN(e) != null && posN(e) <= 10)))],
+      avg: () => [el("p", { class: "fx-eyebrow" }, "Every finish (made cuts count in the average)"), table(["Date", "Tournament", "Finish"], evRows(inYr.filter((e) => fin.get(e.key)?.pos)))],
+      cont: () => { const c = CL?.contY || []; return [el("p", { class: "fx-eyebrow" }, "In contention: within 3 shots of the lead going into the final round"),
+        table(["Tournament", "Into the final round", "Final round", "vs the field", "Finish"], c.map((x) => [[`${x.ev}${st.resYear === "all" ? ` ${x.year}` : ""}`, x.back ? `${x.back} back` : x.shared ? "Tied for the lead" : "Leading", x.fr ? `${x.fr} (${tpS(x.fr - x.par)})` : "—", CL.f(x.gain), x.won ? el("b", { class: "pos" }, "Won") : x.pos ? (/^\d+$/.test(x.pos) ? ord(Number(x.pos)) : x.pos) : "—"], openEv(x.ev, x.year)]),
+          CL?.winList?.some((w) => w.back > 3 && (st.resYear === "all" || w.year === st.resYear)) ? "Wins from further back than 3 shots aren't \"in contention\" here; they're under Wins from behind." : null)]; },
+      clutch: () => { const c = CL?.contY || [], o = CL?.o; if (!o) return null; return [el("p", { class: "fx-eyebrow" }, "Clutch: his final rounds in contention against his usual round"),
+        el("p", {}, [`His usual round: ${CL.f(o.usual)} strokes against the field (all ${o.rounds} rounds on record). In final rounds in contention: ${CL.f(o.contGain)} on average (${o.contN}), so ${CL.f(o.clutchRaw)} a round ${o.clutchRaw >= 0 ? "better" : "worse"} than usual. `, el("b", {}, `Clutch ${CL.f(o.clutch)}`), ` is that, pulled toward 0 because ${o.contN} final round${o.contN === 1 ? " is" : "s are"} a small sample (3 average rounds are added).`]),
+        table(["Tournament", "Into the final round", "Final round vs the field", "vs his usual", "Finish"], c.map((x) => [[`${x.ev}${st.resYear === "all" ? ` ${x.year}` : ""}`, x.back ? `${x.back} back` : "Leading", CL.f(x.gain), el("b", { class: x.gain - o.usual >= 0 ? "pos" : "neg" }, CL.f(x.gain - o.usual)), x.won ? "Won" : x.pos || "—"], openEv(x.ev, x.year)]))]; },
+      leads: () => { const c = (CL?.contY || []).filter((x) => x.back === 0), bl = (CL?.o?.blown || []).filter((b) => st.resYear === "all" || b.year === st.resYear);
+        return [el("p", { class: "fx-eyebrow" }, "54-hole leads: leading or tied going into the final round"),
+          table(["Tournament", "The lead", "Final round", "vs the field", "Result"], c.map((x) => { const b = bl.find((y) => y.ev === x.ev && y.year === x.year);
+            return [[`${x.ev}${st.resYear === "all" ? ` ${x.year}` : ""}`, x.shared ? "Tied" : "Alone", x.fr ? `${x.fr} (${tpS(x.fr - x.par)})` : "—", CL.f(x.gain), x.won ? el("b", { class: "pos" }, "Won") : el("span", { class: "neg" }, `Lost: finished ${x.pos ? (/^\d+$/.test(x.pos) ? ord(Number(x.pos)) : x.pos) : "—"}${b ? `; was ${b.margin} clear after No. ${b.hole}` : ""}`)], openEv(x.ev, x.year)]; })),
+          bl.filter((b) => !c.some((x) => x.ev === b.ev && x.year === b.year)).length ? el("p", { class: "muted small" }, `Also led by 2 or more during a final round and didn't win: ${bl.filter((b) => !c.some((x) => x.ev === b.ev && x.year === b.year)).map((b) => `${b.ev} (${b.margin} clear after No. ${b.hole}, finished ${b.pos || "—"})`).join(" · ")}.`) : null]; },
+      behind: () => { const w = (CL?.winList || []).filter((x) => x.back > 0 && (st.resYear === "all" || x.year === st.resYear));
+        return [el("p", { class: "fx-eyebrow" }, "Wins from behind"), table(["Tournament", "Into the final round", "Final round", "vs the field"], w.map((x) => [[`${x.ev}${st.resYear === "all" ? ` ${x.year}` : ""}`, `${x.back} back`, x.fr ? String(x.fr) : "—", CL.f(x.gain)], openEv(x.ev, x.year)]))]; },
+      type: () => { const o = CL?.o; if (!o?.label) return null; return [el("p", { class: "fx-eyebrow" }, `${o.label.t}: why`), el("p", {}, `${o.label.why}. The details: `), ...(DETAIL[o.label.k === "chaser" ? "behind" : o.label.k === "riser" ? "clutch" : "leads"]() || [])]; },
+    };
+    const base = [card("Events", String(n), st.resYear === "all" ? "all seasons" : st.resYear, "", "events"), card("Cuts made", `${n - missed} of ${n}`, n ? `${Math.round((100 * (n - missed)) / n)}%` : "", "", "cuts"), card("Wins", String(wins), wins ? "" : " ", wins ? "pos" : "", "wins"), card("Top 10s", String(t10), places.length ? `of ${places.length} with a finish` : "no official finishes", "", "top10"),
+      card("Average finish", places.length ? ord(Math.round(places.reduce((a, b) => a + b, 0) / places.length)) : "—", places.length ? "made cuts" : "", "", "avg")];
+    mount(sumBox, [cardsEl = el("div", { class: "tr-sc-cards" }, base), detBox]);
     try { const [M0, evsC] = await Promise.all([import("./clutch.js"), PI.clutchEvents(["R", "H"], yrs.length ? yrs : years)]); const all = M0.clutchFrom(evsC), o = [...all.values()].find((x) => nameKeyOf(x.name) === nameKeyOf(who)), f = M0.clutchFmt;
-      if (o) { const cont = o.cont.filter((c) => st.resYear === "all" || c.year === st.resYear);
-        mount(sumBox, el("div", { class: "tr-sc-cards" }, [...base,
-          card("In contention", `${cont.length}×`, `within 3 of the lead into the final round · ${cont.filter((c) => c.won).length} won`),
-          card("Clutch", f(o.clutch), o.contN ? `final rounds in contention vs his usual (${o.contN})` : "not in contention yet", (o.clutch ?? 0) >= 0.005 ? "pos" : (o.clutch ?? 0) <= -0.005 ? "neg" : ""),
-          card("54-hole leads", o.leads ? `${o.leadWins} of ${o.leads}` : "—", o.leads ? "converted" : "none"),
-          card("Wins from behind", String(o.winsBehind), o.winsBehind ? `up to ${o.maxBackWon} back` : "\u00a0"),
-          o.label ? card("Type", o.label.t, o.label.why, o.label.k === "fader" ? "neg" : "pos") : null].filter(Boolean)),
-          el("p", { class: "muted small" }, "Contention and clutch from every saved scorecard (Scouting \u203a Clutch explains them)")); } } catch (e2) { console.warn("clutch", e2); }
+      if (o) { const cont = o.cont.filter((c) => st.resYear === "all" || c.year === st.resYear); CL = { o, f, contY: cont, winList: o.winList };
+        const lds = cont.filter((c) => c.back === 0), wb = (o.winList || []).filter((w) => w.back > 0 && (st.resYear === "all" || w.year === st.resYear));
+        mount(sumBox, [cardsEl = el("div", { class: "tr-sc-cards" }, [...base,
+          card("In contention", `${cont.length}×`, `within 3 of the lead into the final round · ${cont.filter((c) => c.won).length} won`, "", "cont"),
+          card("Clutch", f(o.clutch), o.contN ? `final rounds in contention vs his usual (${o.contN})` : "not in contention yet", (o.clutch ?? 0) >= 0.005 ? "pos" : (o.clutch ?? 0) <= -0.005 ? "neg" : "", "clutch"),
+          card("54-hole leads", lds.length ? `${lds.filter((c) => c.won).length} of ${lds.length}` : "—", lds.length ? "converted" : "none", "", "leads"),
+          card("Wins from behind", String(wb.length), wb.length ? `up to ${Math.max(...wb.map((w) => w.back))} back` : " ", "", "behind"),
+          o.label ? card("Type", o.label.t, o.label.why, o.label.k === "fader" ? "neg" : "pos", "type") : null].filter(Boolean)), detBox,
+          el("p", { class: "muted small" }, "Tap a card for the tournaments behind it. Contention and clutch from every saved scorecard (Scouting › Clutch explains them).")]); showDet(); } } catch (e2) { console.warn("clutch", e2); }
   })();
   const picker = el("section", { class: "panel tr-pick" }, [el("div", { class: "tr-pick-head" }, [el("p", { class: "fx-eyebrow" }, `Tournament results${who ? ` \u00b7 ${who.replace(/\s*\([^)]*\)\s*$/, "")}` : ""}`), ySel]), sumBox,
     el("p", { class: "fx-eyebrow tr-list-h" }, `${whoL === "His" ? "His" : `${whoL}'s`} tournaments · tap one to open it`), listBox]);
