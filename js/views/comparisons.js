@@ -14,7 +14,12 @@ import { el, mount, icon, infoTip } from "../ui.js";
 import { bar0 } from "../miniCharts.js"; // (update 760: bars square at zero)
 import { getState } from "../auth.js";
 // (update 522) Future Outlook: only for the admin, analysts and employees (Callaway Access)
-const canOutlook = () => { const st = getState(); return !!st?.isAdmin || ["analyst", "employee"].includes(st?.profile?.kind); };
+// (update 927) Future Outlook lives in Scouting now: open its Outlook tab with these players
+async function goOutlook(keys) {
+  try { const OV = await import("./outlookView.js"); OV.wantOutlook(keys); } catch (e) { console.warn(e); }
+  const a = document.querySelector('a[data-view="scout"]');
+  if (a) a.click(); else location.hash = "#/dashboard?view=scout";
+}
 import { effectiveTeam } from "../preview.js";
 import { teamLabels, plainName } from "../names.js";
 import { playerPicker } from "../playerPicker.js";
@@ -369,7 +374,7 @@ export async function render(main) {
     // (update 206) while the questions are open, they're all there is: no filters or numbers until they're answered or skipped
     if (g.open) { mount(root, [head, tourBar(), g.what && g.what !== "place" && g.what !== "outlook" ? leaveOutBar() : null, guideBox()]); window.scrollTo(0, y); return; }
     // (update 403) Future Outlook: its own page (the forecast runs off the page, so nothing freezes)
-    if (g.what === "outlook") { mount(root, [head, tourBar(), guideBox(), outlookSection()]); window.scrollTo(0, y); return; }
+    if (g.what === "outlook") { g.what = null; goOutlook(inPlay().filter((p) => p.key && p.key !== EVERY && !p.members).map((p) => p.key)); } // (update 927: Future Outlook is in Scouting now)
     if (placeDim && !sels.length) { mount(root, [head, tourBar(), leaveOutBar(), guideBox(), placeSection(), editBox()]); window.scrollTo(0, y); root.querySelector(".cmp-edit")?.addEventListener("toggle", (e) => { editOpen = e.target.open; }); return; }
     placeDim = null;
     mount(root, [
@@ -607,7 +612,7 @@ export async function render(main) {
       await load();
     } else { await startProducts(); }
     if (!data) { askBusy = ""; askErr = "Couldn\u2019t load the rounds. Try again."; draw(); return; }
-    if (plan?.outlook && source === "tour" && canOutlook()) { g.what = "outlook"; askBusy = ""; draw(); root.querySelector(".cmp-outlook")?.scrollIntoView({ behavior: "smooth", block: "start" }); return; } // (update 403)
+    if (plan?.outlook && source === "tour" && window.__taScout) { askBusy = ""; goOutlook(inPlay().filter((p) => p.key && p.key !== EVERY && !p.members).map((p) => p.key)); return; } // (update 927: Cal's forecast questions open Scouting's Outlook)
     // what to leave out
     const evs = new Map();
     for (const p of inPlay()) for (const rd of sgRounds(rawOfKey(p.key))) if (rd.event) { const k = `${rd.event}|${yr(rd)}`; if (!evs.has(k)) evs.set(k, { k, event: rd.event, year: yr(rd) }); }
@@ -1132,7 +1137,6 @@ export async function render(main) {
         opt("time", YOU() ? "How you’re playing over time" : "How they’re playing over time", "This season against last, or recent form"),
         products(allRounds()).length ? opt("gear", "One club or ball against another", "Drivers, irons, putters, golf balls…") : null,
         opt("place", YOU() ? "Where and when you play best" : "Where and when they play best", "Courses, tournaments, rounds or months"),
-        source === "tour" && canOutlook() ? opt("outlook", "Future Outlook", "Where they\u2019re headed over the next three seasons, and a report") : null, // (update 403)
         inPlay().length > 1 ? opt("versus", "The players against each other", "Over the same stretch of rounds") : null,
       ];
     } else if (step === "when") {
@@ -2057,145 +2061,7 @@ export async function render(main) {
     }).catch(() => {});
     return null;
   }
-  // (update 396) Outlook: each player picked, forecast for the next three seasons (js/forecast.js), from the whole field
-  // (update 403) its own option ("Future Outlook"), and worked out in a worker (js/forecastClient.js) so the page never freezes
-  const fc = { key: null, res: null, busy: false, err: null, open: new Set(), field: null };
-  function outlookSection() {
-    const ps = inPlay().filter((p) => p.key && p.key !== EVERY && !p.members);
-    const head = el("div", { class: "cmp-sec-head info-head" }, [el("h2", {}, "Future Outlook: the next three seasons"),
-      infoTip("A forecast learned from this site\u2019s own data (update 435). Every round is first credited for the strength of its field. Then a Kalman filter follows each player event by event, per part of the game: then each player’s talent is worked out the way baseball’s projection systems (Marcel, Steamer, ZiPS) and Data Golf do it: a weighted average of their rounds, recent ones counting most, regressed toward the average once by an amount learned from the data; later seasons add only aging (the delta method, as in baseball). Plus what players of their age typically gain or lose (when the data has their birth date), and any signals (ball speed and distance changes, recent form, other tours, rounds played) that proved to help on past seasons. Every setting is learned, not chosen: see \u201cWhat the forecast learned\u201d below. The range and the accuracy are from forecasting past seasons using only the seasons before them. Ranks and chances are against every player ranked on the tour, forecast the same way; the chances come from 3,000 simulated seasons.")]);
-    const wrap = (kids) => el("section", { class: "panel cmp-sec cmp-outlook" }, [head, ...kids]);
-    if (!ps.length) return wrap([el("p", { class: "muted small" }, "Pick one or more players to see their outlook.")]);
-    // the tour: the one picked above, else the one these players have most rounds on
-    const tc = new Map(); for (const p of ps) for (const rd of sgRounds(rawOfKey(p.key))) if (rd.tour) tc.set(rd.tour, (tc.get(rd.tour) || 0) + 1);
-    const tour = tourSel.size === 1 ? [...tourSel][0] : [...tc].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-    const players = ps.map((p) => ({ key: p.key, label: p.label }));
-    const key = `${tour}|${players.map((p) => p.key).join(",")}`;
-    if (fc.key !== key && !fc.busy) {
-      fc.busy = true; fc.err = null; const want = key;
-      Promise.all([import("../fieldSummary.js").then((m) => m.currentField()), import("../forecastClient.js")]).then(async ([cf, FC]) => {
-        if (!cf?.field?.length) { fc.err = "The field’s rankings aren’t built yet."; fc.key = want; return; }
-        fc.field = cf.field;
-        fc.res = await FC.runForecast(cf.field, { tour, players }); fc.key = want;
-      }).catch((err) => { console.error(err); fc.err = "Couldn’t work out the forecast just now."; fc.key = want; }).finally(() => { fc.busy = false; if (g.what === "outlook") draw(); });
-    }
-    if (fc.key !== key || fc.busy) return wrap([el("p", { class: "muted small ta-loading" }, "Working out the forecast… (up to a minute on a big file; the page stays usable while it does)")]);
-    if (fc.err) return wrap([el("p", { class: "muted small" }, fc.err)]);
-    const { fcs, story, info } = fc.res, m = info;
-    const ok = fcs.filter(Boolean);
-    const missing = ps.filter((p, i) => !fcs[i]).map((p) => p.label);
-    if (!ok.length) return wrap([el("p", { class: "muted small" }, `Not enough rounds on ${m.target || "the tour"} to forecast ${missing.join(", ")}.`)]);
-    const f2 = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`);
-    const pct = (v) => (v == null ? "—" : v < 0.005 ? "<1%" : v > 0.995 ? ">99%" : `${Math.round(v * 100)}%`);
-    const yrs = ok[0].years.map((y) => y.year);
-    const order = [...ok].sort((a, b) => b.years.reduce((t, y) => t + y.total, 0) - a.years.reduce((t, y) => t + y.total, 0));
-    const CATN = { OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" };
-    const rows = [];
-    order.forEach((f, i) => {
-      const open = fc.open.has(f.key);
-      const tr = el("tr", { class: "sg-tap", role: "button", tabindex: "0", "aria-expanded": String(open) }, [
-        el("td", {}, [el("span", { class: "sg-exp", "aria-hidden": "true" }, open ? "▾ " : "▸ "), el("strong", {}, `${i + 1}. ${f.name}`), el("span", { class: "muted small" }, f.age != null ? ` · ${Math.floor(f.age)}` : " · age ?")]),
-        el("td", { class: "num" }, f.now ? [el("span", { class: f.now.total >= 0 ? "pos" : "neg" }, f2(f.now.total)), el("span", { class: "muted small fc-sub" }, `${f.now.n} rds`), f.now.rank ? el("span", { class: "small fc-sub", title: f.now.ranked ? "This season so far, as the Stats page ranks it" : "Not enough rounds to be ranked yet: where they'd sit" }, `${ordinal(f.now.rank)}${f.now.ranked ? "" : "*"}`) : null] : "\u2014"), // (update 413: this season's rank)
-        ...f.years.map((y) => el("td", { class: "num" }, [el("strong", { class: y.total >= 0 ? "pos" : "neg" }, f2(y.total)), el("span", { class: "muted small fc-sub" }, `${f2(y.lo)} to ${f2(y.hi)}`), el("span", { class: "small fc-sub" }, `~${ordinal(y.rank)}`)])),
-      ]);
-      const flip = () => { open ? fc.open.delete(f.key) : fc.open.add(f.key); draw(); };
-      tr.addEventListener("click", flip); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
-      rows.push(tr);
-      if (!open) return;
-      for (const c of ["OTT", "APP", "ARG", "PUTT"]) rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, CATN[c]), el("td", { class: "num" }, f.now ? f2(f.now.cats[c]) : "—"), ...f.years.map((y) => el("td", { class: "num" }, f2(y.cats[c])))]));
-      rows.push(el("tr", { class: "cmp-sub cmp-deep" }, [el("td", {}, "Chance of a top 10 / 50 / 100 season"), el("td", {}, ""), ...f.years.map((y) => el("td", { class: "num small" }, `${pct(y.top10)} / ${pct(y.top50)} / ${pct(y.top100)}`))])); // (update 414: + top 100)
-    });
-    const e1 = m.err[0];
-    // (update 406) on players with a real season to check (20+ rounds), against the two simple guesses on the same seasons
-    const acc = e1 ? `${m.outOfSample ? "Checked on seasons it hadn\u2019t seen" : "Checked on past seasons"}: one season ahead, off by about ${(e1.bt?.model ?? e1.mae).toFixed(2)} per round on average (${e1.bt?.n ?? e1.n} seasons of 20+ rounds)${e1.bt ? `; their latest season alone was off by ${e1.bt.last.toFixed(2)}, the tour average by ${e1.bt.avg.toFixed(2)}` : ""}.` : "";
-    const ageNote = !m.ageOk ? "No birth dates in the data yet (add a birth_date column), so age isn’t taken into account." : `Age from ${m.agePlayers} players’ birth dates.`;
-    // (update 397) what it learned from the data, in plain words
-    // (update 410) what the new forecaster learned, in plain words
-    const pr = m.params, pctS = (v) => `${Math.round(v * 100)}%`, pc = pr.cats || {};
-    const learned = el("details", { class: "fc-learned" }, [el("summary", {}, "What the forecast learned from this data"),
-      el("ul", { class: "fc-learned-l" }, [
-        el("li", {}, `Field strength: every round is credited for the strength of its field (the average level of the players in it, worked out together with theirs), so a weak-field week counts for less and every tour sits on one scale. On ${m.target}, a field moves per round by ${f2(pr.field?.spread?.[0] ?? 0)} to ${f2(pr.field?.spread?.[1] ?? 0)} (the middle 80% of ${pr.field?.events ?? 0} events, last two seasons).`),
-        // (update 435) the method baseball’s projection systems use (Marcel, Steamer) and Data Golf uses in golf
-        el("li", {}, `The method: the one baseball’s projection systems are built on (Marcel, Steamer, ZiPS) and Data Golf uses for golf. A player’s talent is a weighted average of their rounds (recent rounds count most), regressed toward the average by adding a set number of rounds of average play, so a short record is pulled in more than a long one. That regression happens once; later seasons only add aging. Like Steamer and Data Golf, the weights and the regression are learned from this data: whatever best forecast each next season.`),
-        el("li", {}, `A round’s weight halves every ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${(pc[c]?.halfLife ?? 0)} year${pc[c]?.halfLife === 1 ? "" : "s"} (${CATN[c]})`).join(", ")}. Rounds of average added: ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATN[c]} ${pc[c]?.regressRounds ?? 0}`).join(", ")}. Weight of each part in the total (Data Golf finds driving tells the most and putting the least): ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATN[c]} ${(pc[c]?.weight ?? 1).toFixed(2)}`).join(", ")}.`),
-        el("li", {}, `How much a full season (${pr.typicalN} rounds) above or below average carries into the next forecast: ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATN[c]} ${pctS(pr.carry[c])}`).join(", ")}. A single round swings around a player’s level by about ${["OTT", "APP", "ARG", "PUTT"].map((c) => `${CATN[c]} ±${(pc[c]?.noise ?? 0).toFixed(2)}`).join(", ")}.`),
-        pr.choices ? el("li", {}, `${pr.choices.useData ? "Settings used: the data’s own (age trusted by how much data each age has, no trend carried forward), because they predicted the seasons it hadn’t seen better than trend-following with age at full strength." : `Settings used: trend-following (each player’s direction over the last two seasons carried forward, fading by ${Math.round((1 - pr.choices.trendFade) * 100)}% a season) and age at full strength, because they predicted the seasons it hadn’t seen better than the data’s own settings.`}${pr.choices.cmp.some(Boolean) ? ` On seasons it hadn’t seen these were off by ${pr.choices.cmp.map((x, i) => (x ? `${x.yours.toFixed(3)} with trend and full age, ${x.dataOnly.toFixed(3)} with the data’s own settings, ${i ? `${i + 1} seasons ahead` : "one season ahead"}` : "")).filter(Boolean).join(", ")}.` : ""} Ranges show the middle half of a player’s likely level.`) : null,
-        pr.signals?.tried ? el("li", {}, `Signals tested on seasons it hadn’t seen (each season held out in turn): ${pr.signals.kept.length ? `kept ${pr.signals.kept.map((k) => `${k.label.replace(/ \(.*\)$/, "")} (one typical difference, ±${k.sd.toFixed(k.key === "rounds" ? 2 : k.key === "ballSpeed" || k.key === "drive" ? 1 : 2)}, moves next season by ${f2(k.perSd[0])})`).join("; ")}` : "none helped, so none are used"}${pr.signals.tried.filter((t) => t.key !== "all" && !t.kept).length ? `. Not kept (no help on unseen seasons): ${pr.signals.tried.filter((t) => t.key !== "all" && !t.kept).map((t) => t.label.replace(/ \(.*\)$/, "")).join(", ")}` : ""}.`) : null,
-        pr.age?.shared != null && Math.abs(pr.age.shared) >= 0.005 ? el("li", {}, `The average change from one season to the next, across all players and ages: ${f2(pr.age.shared)} per round. It’s already in next season’s forecast and isn’t added again after that: it would move every player down by the same amount (mostly the tour getting stronger), changing no rank or chance, so projections stay against today’s average field, as Marcel’s are against today’s league. The age effect below is how a player’s age makes them differ from it (centered, as Marcel’s age adjustment is).`) : null,
-        el("li", {}, m.ageOk ? `Age (from ${pr.age.players} players’ birth dates): how much better or worse than the average change a season is at each age: ${[24, 28, 32, 36, 40].map((a) => `${f2(pr.age.at[a])} at ${a}`).join(", ")}. Worked out the way baseball does it (the delta method): every player’s change from one season to the next, averaged by age, with players who didn’t come back given the season they’d have been expected to have (so only the survivors don’t make aging look kinder than it is), smoothed over nearby ages${pr.choices?.ageFull ? ". Each age’s own value is used in full, at every age (your choice: the data alone would have leaned ages with few players on the ages around them)" : ""}.` : pr.age?.none ? "Age: left out. On seasons it hadn’t seen, projections were more accurate without it." : "Age: no birth dates in the data yet, so it isn’t learned or used."),
-        el("li", {}, `Ranges: the middle half of a player’s likely level, sized from how far forecasts missed on seasons it hadn’t seen, less the part one season’s luck alone explains (about ±${(Math.sqrt((pr.sig2Tot ?? 0) / Math.max(1, pr.typicalN)) * 1.28).toFixed(2)} per round over a ${pr.typicalN}-round season). The chances of a top 10, 50 or 100 season include that luck.`),
-        el("li", {}, `${pr.outOfSample ? "On seasons it hadn’t seen (each forecast only from the seasons before it)" : "On the seasons it learned from (too few seasons yet to hold some back)"}, for players with 20+ rounds, it was off by about ${m.err.map((x, i) => (x ? `${(x.bt?.model ?? x.mae).toFixed(2)} ${i ? `${i + 1} seasons ahead` : "one season ahead"}${x.bt ? ` (latest season alone ${x.bt.last.toFixed(2)}, tour average ${x.bt.avg.toFixed(2)})` : ""}` : "")).filter(Boolean).join("; ")} per round on average. Lower is better.`),
-        el("li", {}, "Every setting above is learned from this data (by how well it forecast past seasons), not chosen."),
-      ])]);
-    // (update 402) the full report: individual profiles and comparisons, 5 pages or fewer
-    const exp = el("button", { type: "button", class: "btn small" }, "⭳ Export report");
-    exp.addEventListener("click", async () => {
-      if (exp.disabled) return;
-      exp.disabled = true; exp.textContent = "Building the report…";
-      // (update 443) on a phone or the installed app, a new tab can't be closed to get back: the report opens over the
-      // page instead, with Close and Print buttons
-      const inApp = (() => { try { return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent); } catch { return false; } })();
-      const win = inApp ? null : window.open("", "_blank"); // (opened now, while it's still a tap: pop-up blockers allow it)
-      try {
-        const [{ buildOutlookReport }, FS] = await Promise.all([import("../outlookReport.js"), import("../fieldSummary.js")]);
-        // the field's distances, for ranks by distance (skipped if it isn't on hand within a few seconds)
-        const det = await Promise.race([FS.currentFieldDetail().catch(() => null), new Promise((r) => setTimeout(() => r(null), 8000))]);
-        // (update 416) the site's logo, carried inside the report (it opens on its own, away from the site's files)
-        const dataUrl = async (u) => { const r = await fetch(u); if (!r.ok) throw new Error(String(r.status)); const b = await r.blob(); if (!/^image\//.test(b.type)) throw new Error("not an image"); return await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); }); };
-        const logo = await dataUrl("media/logo.png").catch(() => dataUrl("icons/icon-192.png")).catch(() => null);
-        const html = buildOutlookReport({ field: fc.field, detail: det?.field || null, fcs: order, info: m, ownRounds: (k) => sgRounds(rawOfKey(k)), extra: missing, logo });
-        // (update 419) the report is written into the new tab and its print button wired from here: the site's security
-        // policy carries over to that tab and blocks the page's own inline handler, so the button did nothing before
-        // (update 446) phones and the installed app: the report on a page of its own in this tab (fits the screen, zooms,
-        // prints to PDF; Close comes back here); the pop-over only if it can't be handed over
-        if (inApp) { let ok = false; try { sessionStorage.setItem("ta.outlookReport", html); ok = true; } catch { /* */ } if (ok) location.href = "outlook.html"; else showReportOverlay(html); }
-        else if (win) {
-          win.document.open(); win.document.write(html.replace(' onclick="print()"', "")); win.document.close();
-          const wire = () => {
-            const b = win.document.getElementById("printBtn"); if (b && !b.dataset.wired) { b.dataset.wired = "1"; b.addEventListener("click", () => { win.focus(); win.print(); }); }
-            const c = win.document.getElementById("closeBtn"); if (c && !c.dataset.wired) { c.dataset.wired = "1"; c.addEventListener("click", () => { win.close(); if (!win.closed) { try { window.focus(); } catch { /* */ } } }); }
-          };
-          wire(); win.addEventListener("load", wire);
-        } else {
-          const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-          const a = document.createElement("a"); a.href = url; a.download = "outlook-report.html"; a.click();
-          setTimeout(() => URL.revokeObjectURL(url), 120000);
-        }
-      } catch (err) {
-        console.error(err); win?.close();
-        outlookReport(order, story, { tour: m.target, years: yrs, last: m.lastYear, acc, ageNote, missing }); // (the short version)
-      } finally { exp.disabled = false; exp.textContent = "⭳ Export report"; }
-    });
-    return wrap([
-      el("div", { class: "fc-foot fc-top" }, [exp, el("span", { class: "muted small" }, "A report of 5 pages or fewer: each player, side by side, and the projection")]),
-      el("p", { class: "muted small" }, `Strokes gained per round against an average ${m.target || "tour"} field (each round credited for the strength of its field; close to the Stats page for a typical schedule). This season so far is as on the Stats page. With the middle half of their likely level (a single season’s luck can land wider) and the rank it would mean. Tap a player for each part of the game and their chances.`),
-      el("div", { class: "cmp-tw" }, el("table", { class: "cmp-table fc-t" }, [
-        el("thead", {}, el("tr", {}, [el("th", {}, ""), el("th", { class: "num" }, String(m.lastYear)), ...yrs.map((y) => el("th", { class: "num" }, y))])),
-        el("tbody", {}, rows)])),
-      el("div", { class: "fc-story" }, story.map((t) => el("p", {}, t))),
-      missing.length ? el("p", { class: "muted small" }, `Not enough rounds on ${m.target} to forecast ${missing.join(", ")}.`) : null,
-      el("p", { class: "muted small" }, [acc, " ", ageNote]),
-      learned,
-    ]);
-  }
-  // (update 396) the Outlook as a page to print or save as a PDF
-  function outlookReport(order, story, o) {
-    const f2 = (v) => `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(2)}`;
-    const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
-    const rowsH = order.map((f, i) => `<tr><td><b>${i + 1}. ${esc(f.name)}</b>${f.age != null ? ` (${Math.floor(f.age)})` : ""}</td><td>${f.now ? `${f2(f.now.total)} <small>${f.now.n} rds</small>` : "&mdash;"}</td>${f.years.map((y) => `<td><b>${f2(y.total)}</b><br><small>${f2(y.lo)} to ${f2(y.hi)} &middot; ~${ordinal(y.rank)}</small></td>`).join("")}</tr>`).join("");
-    const catH = order.map((f) => `<h3>${esc(f.name)}</h3><table><tr><th></th><th>${o.last}</th>${o.years.map((y) => `<th>${y}</th>`).join("")}</tr>${["OTT", "APP", "ARG", "PUTT"].map((c) => `<tr><td>${({ OTT: "Off-the-Tee", APP: "Approach", ARG: "Around-the-Green", PUTT: "Putting" })[c]}</td><td>${f.now ? f2(f.now.cats[c]) : "&mdash;"}</td>${f.years.map((y) => `<td>${f2(y.cats[c])}</td>`).join("")}</tr>`).join("")}</table>`).join("");
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Outlook ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</title><style>body{font:14px/1.45 -apple-system,Segoe UI,Inter,sans-serif;color:#111;max-width:820px;margin:28px auto;padding:0 18px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:22px 0 8px}h3{font-size:14px;margin:16px 0 6px}table{border-collapse:collapse;width:100%;margin:6px 0 10px}th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left}small{color:#666}.muted{color:#666;font-size:12px}@media print{body{margin:0}}</style></head><body>
-<h1>Outlook: ${esc(o.years[0])}\u2013${esc(o.years.at(-1))}</h1><p class="muted">Strokes gained per round against an average ${esc(o.tour || "tour")} field. Tour Analytics forecast, ${new Date().toLocaleDateString()}.</p>
-<table><tr><th></th><th>${esc(o.last)}</th>${o.years.map((y) => `<th>${esc(y)}</th>`).join("")}</tr>${rowsH}</table>
-<h2>The take</h2>${story.map((t) => `<p>${esc(t)}</p>`).join("")}
-<h2>By part of the game</h2>${catH}
-<p class="muted">${esc(o.acc)} ${esc(o.ageNote)} ${o.missing.length ? `Not enough rounds to forecast ${esc(o.missing.join(", "))}.` : ""} How it works: the method baseball's projection systems use (Marcel, Steamer, ZiPS) and Data Golf uses for golf: a weighted average of each player's rounds, recent ones counting most, regressed toward the average once, then aged forward a season at a time. A projection, not a promise: injuries, swing or equipment changes and schedules aren't in it.</p>
-<script>setTimeout(()=>print(),300)<\/script></body></html>`;
-    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-    const w = window.open(url, "_blank");
-    if (!w) { const a = document.createElement("a"); a.href = url; a.download = "outlook.html"; a.click(); }
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  }
+  // (update 927) Future Outlook moved to Scouting (views/outlookView.js)
   function boardSection(items) {
     const live = items.filter((it) => it.s.n);
     if (live.length < 2) return null;
@@ -2816,19 +2682,3 @@ export async function render(main) {
   return () => {};
 }
 
-/** (update 443) The report over the page (phones and the installed app): a full-screen frame with Close and Print. */
-function showReportOverlay(html) {
-  document.querySelector(".rep-ov")?.remove();
-  const frame = el("iframe", { class: "rep-ov-frame", title: "Outlook report" });
-  frame.srcdoc = html.replace(/<div class="bar">[\s\S]*?<\/div>\n/, "");
-  const close = el("button", { type: "button", class: "btn small rep-ov-close" }, "\u2715 Close");
-  const print = el("button", { type: "button", class: "btn ghost small rep-ov-print" }, "Print or save as PDF");
-  const ov = el("div", { class: "rep-ov", role: "dialog", "aria-modal": "true", "aria-label": "Outlook report" }, [el("div", { class: "rep-ov-bar" }, [close, print]), frame]);
-  const done = () => { ov.remove(); document.documentElement.classList.remove("rep-ov-open"); document.removeEventListener("keydown", onKey); };
-  const onKey = (e) => { if (e.key === "Escape") done(); };
-  close.addEventListener("click", done);
-  print.addEventListener("click", () => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (err) { console.error(err); } });
-  document.addEventListener("keydown", onKey);
-  document.documentElement.classList.add("rep-ov-open");
-  document.body.append(ov);
-}

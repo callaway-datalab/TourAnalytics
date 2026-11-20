@@ -1441,3 +1441,15 @@ th.bs-lastn .bs-lastn-w { position: relative; top: 4px; }
 .tr-shots-ph .tr-sh-who { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 600px) { .tr-pop .tr-rounds .tr-rd { font-size: 0.78rem; padding: 4px 10px; } .tr-pop .tr-shots-scroll { max-height: 62vh; } }
 .tr-shots-ph .tr-sh-who { max-width: 62px; } .tr-shots-ph th, .tr-shots-ph td { padding: 6px 4px !important; }
+/* (update 927) Scouting's Outlook tab: the player picker, the sections, the report's pages */
+.ol-pick { display: grid; gap: 8px; }
+.ol-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ol-chip { border: 1px solid color-mix(in srgb, var(--gold, #d4b483) 60%, transparent); background: color-mix(in srgb, var(--gold, #d4b483) 14%, transparent); color: inherit; border-radius: 999px; padding: 5px 12px; font: 600 0.85rem var(--font-body, inherit); cursor: pointer; }
+.ol-addrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ol-q { flex: 1 1 220px; min-width: 0; max-width: 360px; margin: 0 !important; }
+.ol-sugg { display: flex; flex-wrap: wrap; gap: 6px; }
+.ol-hit { border: 1px solid var(--line-2, rgba(255,255,255,0.14)); background: none; color: inherit; border-radius: 999px; padding: 5px 12px; font: 500 0.85rem var(--font-body, inherit); cursor: pointer; }
+.ol-hit:hover { border-color: var(--gold, #d4b483); }
+.ol-out { display: grid; gap: 14px; margin-top: 14px; }
+.ol-sec { min-width: 0; } .ol-report { display: block; margin-top: 8px; }
+.ol-sec .fc-learned { margin-top: 6px; }

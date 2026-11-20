@@ -649,7 +649,7 @@ async function answerForecast(ps, question, local) {
     text: [lead, ...story].join("\n\n"),
     table: { head: ["Player", "Age", ...yrs.map((y) => `${y} (rank)`)], num: [1, 2, 3, 4], rows: order.map((f) => [f.name, f.age != null ? String(Math.floor(f.age)) : "\u2014", ...f.years.map((y) => `${f2(y.total)} (~${ordinal(y.rank)})`)]) },
     note,
-    go: { href: `#/comparisons?ask=${encodeURIComponent(question)}&plan=1`, label: "See the Future Outlook in Compare \u2192", plan },
+    go: { href: `#/comparisons?ask=${encodeURIComponent(question)}&plan=1`, label: "See the Future Outlook in Scouting \u2192", plan },
   };
 }
 const ps0 = (plan, local) => (plan.players?.length || local.players?.length) > 0;

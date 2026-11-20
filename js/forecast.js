@@ -516,7 +516,44 @@ function learn(D, { tour = null } = {}) {
   // each season's average of the ranked players on the tour picked (adjusted), for the story's flags
   const meanAdj = new Map(); for (let y = 0; y < NY; y++) { const r = rankedIn(y, adjT); if (r.length) meanAdj.set(yrs[y], r.reduce((t, [, s]) => t + s.cats.reduce((a, b) => a + b, 0), 0) / r.length); }
   const pIndex = new Map(D.players.map((p, i) => [p.key, i]));
+  /* ---------------- (update 927) trajectory: his level now against his level a year ago ----------------
+   * His level at a date is the forecaster's own talent estimate then: every round credited for the strength of its field,
+   * each round's weight halving with the learned half-life (per part of the game), pulled toward the average by the
+   * learned rounds of average, and the parts combined with the learned weights. The same estimate a year earlier (only the
+   * rounds played by then), and the difference. Its uncertainty counts the rounds both share once: only how the weights
+   * moved can make the change luck. */
+  const tLast = (() => { let m0 = -Infinity; for (let i = 0; i < N; i++) if (D.T[i] > m0) m0 = D.T[i]; return m0; })();
+  const MIN_YR = 15; // (rounds in the year before each date, to be given a level then)
+  const levelPair = (p, t1, t0) => {
+    const ix = order[p]; let v1 = 0, v0 = 0, varD = 0, var1 = 0, n1 = 0, n0 = 0;
+    for (const i of ix) { if (D.T[i] <= t1 && D.T[i] > t1 - 1) n1++; if (D.T[i] <= t0 && D.T[i] > t0 - 1) n0++; }
+    for (let c = 0; c < NC; c++) {
+      const { hl, K, m } = M.best[c], lam = Math.log(2) / hl, bc = M.b[c];
+      let w1 = 0, x1 = 0, w0 = 0, x0 = 0;
+      for (const i of ix) { if (!(D.M[i] & (1 << c))) continue; const a = M.F.adj[i * NC + c];
+        if (D.T[i] <= t1) { const f = Math.exp(-lam * (t1 - D.T[i])); w1 += f; x1 += f * a; }
+        if (D.T[i] <= t0) { const f = Math.exp(-lam * (t0 - D.T[i])); w0 += f; x0 += f * a; } }
+      v1 += bc * (x1 + K * m) / (w1 + K); v0 += bc * (x0 + K * m) / (w0 + K);
+      let sD = 0, s1 = 0;
+      for (const i of ix) { if (!(D.M[i] & (1 << c))) continue; const f1 = D.T[i] <= t1 ? Math.exp(-lam * (t1 - D.T[i])) / (w1 + K) : 0, f0 = D.T[i] <= t0 ? Math.exp(-lam * (t0 - D.T[i])) / (w0 + K) : 0; sD += (f1 - f0) ** 2; s1 += f1 * f1; }
+      varD += bc * bc * M.sig2[c] * sD; var1 += bc * bc * M.sig2[c] * s1;
+    }
+    return { now: v1, ago: v0, change: v1 - v0, sd: Math.sqrt(varD), sdNow: Math.sqrt(var1), n1, n0 };
+  };
+  let trajMemo = null;
+  const trajAll = () => {
+    if (trajMemo) return trajMemo;
+    const t1 = tLast, t0 = tLast - 1, L = D.players.map((_, p) => levelPair(p, t1, t0));
+    const nowPool = L.map((x, p) => [p, x]).filter(([, x]) => x.n1 >= MIN_YR).sort((a, b) => b[1].now - a[1].now), agoPool = L.map((x, p) => [p, x]).filter(([, x]) => x.n0 >= MIN_YR).sort((a, b) => b[1].ago - a[1].ago);
+    const rNow = new Map(nowPool.map(([p], i) => [p, i + 1])), rAgo = new Map(agoPool.map(([p], i) => [p, i + 1]));
+    trajMemo = L.map((x, p) => { if (x.n1 < MIN_YR) return null; const z = x.sd > 0 ? x.change / x.sd : 0, ok0 = x.n0 >= MIN_YR;
+      const k = !ok0 ? "new" : z >= 1.65 && x.change >= 0.1 ? "up" : z >= 1 && x.change >= 0.1 ? "up?" : z <= -1.65 && x.change <= -0.1 ? "down" : z <= -1 && x.change <= -0.1 ? "down?" : "steady";
+      return { ...x, z, k, rankNow: rNow.get(p) ?? null, rankAgo: ok0 ? rAgo.get(p) ?? null : null, ofNow: nowPool.length, ofAgo: agoPool.length, asOf: t1 }; });
+    return trajMemo;
+  };
+  const trajOf = (key) => { const p = pIndex.get(key); return p == null ? null : trajAll()[p]; };
   return {
+    trajOf,
     target, years: yrs, lastYear, params, ageOk, agePlayers: params.age.players, err, outOfSample, sig2Tot, typicalN,
     project, fieldProj, seasonN, rankScale, chances, ageCurve, meanAdj, pIndex, players: D.players, rawT, adjT, NY, nowRank,
     nameOf: new Map(D.players.map((p) => [p.key, p.name])), birthOf: new Map(D.players.map((p) => [p.key, p.birth])),
@@ -581,7 +618,7 @@ export function forecastPlayer(model, key, { chances: withChances = true } = {})
   };
   const lastH = hist.at(-1);
   const now = lastH?.year === lastYear ? { ...lastH, ...(model.nowRank?.(p) || {}) } : null;
-  return { key, name: model.nameOf.get(key) || key, birth, age, now, hist, years, flags, tour: model.target };
+  return { key, name: model.nameOf.get(key) || key, birth, age, now, hist, years, flags, tour: model.target, traj: model.trajOf ? model.trajOf(key) : null }; // (update 927)
 }
 
 /** The write-up for a few players' forecasts, in plain words (best first over the three seasons). */
