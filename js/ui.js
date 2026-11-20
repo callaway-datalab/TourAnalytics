@@ -133,7 +133,7 @@ const sectionsFor = (kind) => {
     // (update 833) Stats' views are its row of pages (the tabs that were on the page): each opens Stats on that view
     // (update 930) Rankings (the old Leaderboards › Historical) right after Player Stats; Tournament Results moved to Leaderboards as Historical
     ...STATS_VIEWS.filter(([v]) => v === "full").map(statsItem),
-    ["Rankings", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"]],
+    ["Rankings", admin ? "#/admin/analyze" : "#/leaderboards", admin ? ["admin-analyze"] : ["leaderboards"], { notView: "results" }],
     ...STATS_VIEWS.filter(([v]) => v !== "full" && !PLAY_VIEWS.includes(v) && !FOLLOW_VIEWS.includes(v) && (v !== "scout" || window.__taScout)).map(statsItem), /* (update 891: Scouting only with access) */ // (update 858: What's in the Bag and Practice & Goals are under Play)
     // (update 160) no Performance Reports page
     // (update 188) Comparisons: a player's rounds side by side (Live Feed moved up to the top bar)
@@ -147,7 +147,9 @@ const sectionsFor = (kind) => {
   // (update 817) Play is Enter New Round only (Course Prep is under Analyze; Practice, Practice Week and Goals are a tab on Stats)
   // (update 818) Follow: the leaderboards (Historical) and the Event Feed (Live)
   const followItems = [
-    ...STATS_VIEWS.filter(([v]) => FOLLOW_VIEWS.includes(v)).map(statsItem), // (update 930: Historical, the old Tournament Results: Stats' own view, listed here)
+    // (update 931) Historical: the leaderboards' page with every tournament, the winners, wins and top 10s when no player is picked;
+    // with a player picked it hands over to his Tournament Results (Stats' own view, under this header)
+    ["Historical", `${admin ? "#/admin/analyze" : "#/leaderboards"}?view=results`, admin ? ["admin-analyze", "admin-player-stats"] : ["leaderboards", "dashboard", "dataset", "player-stats"], { view: "results" }],
     ["Live", "#/live", ["live"]],
   ];
   const planItems = [
@@ -176,6 +178,7 @@ export const statsViewNow = () => new URLSearchParams(location.hash.split("?")[1
 const itemOn = (item, routeId) => {
   const [, , routes, opt = {}] = item;
   if (!routes.includes(routeId)) return false;
+  if (opt.notView && statsViewNow() === opt.notView) return false; // (update 931: Rankings' page showing Historical)
   if (opt.view) return opt.view === statsViewNow();
   return !opt.q || (routeId !== "admin-reports-view" ? opt.q === "performance" : catNow() === opt.q);
 };

@@ -6,6 +6,7 @@ import { productEditsOf } from "./sg.js";
 import { careerBlocks, statBlocksCmp, getState, drillFor, drillLine, practiceOpen, goalStatsFor, isMine, favoriteKeys, el, mount, loadScript, infoTip, CATEGORIES, applyFilters, roundFilter, filterOptions, sliceTotals, sgPerRound, sgBy, trend, statTable, statTableFull, shortDate, missSplit, leavePoints, leaveHistogram, rank, gradeColor, sgColor, fmtSG, defaultMinRounds, statRounds, statAgg, statDef, fmtStat, statsIn, groupObs, gearInfo, gearLabel, gearList, distLead, localDay, LEVELS, PLAN_ADDED, PLAN_SEEN, bucketsOf, groupSplit, kv, sgn2, splitOf, sumSplit, mixWords, mixLead, MIX_CAUSE, CHART_JS, SPANS, SUMMARY, BREAKDOWNS, LEAVE_SCALE, nf1, catName, peakNote, planEditor } from "./sgShared.js";
 import * as sgFilters from "./sgFilters.js";
 import * as sgHero from "./sgHero.js";
+import { currentPlayer } from "./current.js"; // (update 931)
 import * as sgSummary from "./sgSummary.js";
 import * as sgFullTable from "./sgFullTable.js";
 import * as sgDetail from "./sgDetail.js";
@@ -309,6 +310,9 @@ export function sgDashboard(container, opts) {
     destroyCharts();
     chartSeq = 0;
     // Player Stats with nobody picked yet (update 158): the page is just the player search
+    // (update 931) Historical with no player at all (none in the header either): the leaderboards' version. With one in the
+    // header, the page is still picking him up: wait (going back to the leaderboards would bounce between the two)
+    if (opts.blankWithoutMe && !meAll && st.view2 === "results" && !currentPlayer()?.key) { location.replace(`${opts.mode === "admin" ? "#/admin/analyze" : "#/leaderboards"}?view=results`); return; }
     if (opts.blankWithoutMe && !meAll) {
       if (opts.lead && opts.leadHome) { opts.leadHome.appendChild(opts.lead); opts.leadHome.hidden = true; }
       mount(container, opts.slot || null);

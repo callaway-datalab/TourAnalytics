@@ -30,6 +30,14 @@ export async function render(main, { previewClient }) {
   };
   const pickNote = !team.isTeam ? "Tap your name for your own stats." : Object.keys(access).length > 1 ? "Tap one of your players for their view." : "Tap your player's name for their view.";
   const dashState = {};
+  // (update 931) Leaderboards › Historical (?view=results): every tournament, the winners, wins and top 10s; with a player
+  // picked in the header, his Tournament Results instead (and the moment one is picked)
+  if (new URLSearchParams(location.hash.split("?")[1] || "").get("view") === "results") {
+    const C = await import("../current.js");
+    if (C.currentPlayer()?.key) { location.replace(`${C.statsHref()}?view=results`); return; }
+    dashState.view2 = "results";
+    const off = C.onCurrent((p) => { if (!location.hash.includes("view=results") || !location.hash.startsWith("#/leaderboards")) { off(); return; } if (p?.key) { off(); location.replace(`${C.statsHref()}?view=results`); } });
+  }
   let dash = null, shownVersion = null;
   const stop = () => { dash?.destroy(); dash = null; };
 

@@ -36,7 +36,15 @@ export async function render(main, { flash, routeId }) {
   let loadToken = 0;
   let dash = null;                 // the dashboard for the current file
   let fieldPlayers = [];           // [{ key, label, rounds }]
-  const dashState = {};            // filters survive switching players
+  const dashState = {};
+  // (update 931) Leaderboards › Historical (?view=results) on the board: every tournament, the winners, wins and top 10s;
+  // with a player picked in the header, his Tournament Results instead (and the moment one is picked)
+  if (board && new URLSearchParams(location.hash.split("?")[1] || "").get("view") === "results") {
+    const C = await import("../current.js");
+    if (C.currentPlayer()?.key) { location.replace(`${C.statsHref()}?view=results`); return; }
+    dashState.view2 = "results";
+    const off = C.onCurrent((p) => { if (!location.hash.includes("view=results") || !location.hash.startsWith("#/admin/analyze")) { off(); return; } if (p?.key) { off(); location.replace(`${C.statsHref()}?view=results`); } });
+  }            // filters survive switching players
   const enteredState = {};
   let source = "tour";             // "tour": uploaded Tour stats; "entered": rounds from Data Entry
   const rowsCache = ROWS;          // `${datasetId}|${playerKey}` -> { label, rows }
