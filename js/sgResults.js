@@ -95,9 +95,9 @@ export function resultsView(S, rounds, field) {
   if (!st.resYear || !(st.resYear === "all" || years.includes(st.resYear))) st.resYear = years[0];
   const ySel = el("select", { class: "tr-sel", "aria-label": "Season" }, [...years.map((y) => el("option", { value: y }, y)), el("option", { value: "all" }, "All seasons")]);
   ySel.value = st.resYear;
-  ySel.addEventListener("change", () => { st.resYear = ySel.value; st.resOpen = false; S.draw(); });
+  ySel.addEventListener("change", () => { st.resYear = ySel.value; st.resOpen = false; st.resX = null; S.draw(); });
   const tSel = toursAll.length > 1 ? el("select", { class: "tr-sel", "aria-label": "Tour" }, [...toursAll.map((t) => el("option", { value: t }, t)), el("option", { value: "all" }, "All tours")]) : null;
-  if (tSel) { tSel.value = st.resTour; tSel.addEventListener("change", () => { st.resTour = tSel.value; st.resOpen = false; st.resKey = null; S.draw(); }); }
+  if (tSel) { tSel.value = st.resTour; tSel.addEventListener("change", () => { st.resTour = tSel.value; st.resOpen = false; st.resKey = null; st.resX = null; S.draw(); }); }
   const inYr = evs.filter((e) => st.resYear === "all" || e.year === st.resYear), who = me?.label || "", whoL = String(who).replace(/\s*\([^)]*\)\s*$/, "").trim().split(/\s+/).slice(-1)[0] || "His";
   const sumBox = el("div", { class: "tr-sum" }, el("p", { class: "muted small" }, "Loading the season…"));
   const listBox = el("div", { class: "tr-list" });
@@ -105,15 +105,19 @@ export function resultsView(S, rounds, field) {
   const toDetail = () => { const go1 = () => { const n = document.querySelector(".tr-heroes"); if (!n) return; const bar = Math.max(0, document.querySelector(".rail")?.getBoundingClientRect().bottom || 0); window.scrollTo({ top: Math.max(0, n.getBoundingClientRect().top + window.scrollY - bar - 12), behavior: "smooth" }); };
     let moved = false; const mv = () => { moved = true; }; addEventListener("wheel", mv, { once: true, passive: true }); addEventListener("touchmove", mv, { once: true, passive: true });
     setTimeout(go1, 120); setTimeout(() => { removeEventListener("wheel", mv); removeEventListener("touchmove", mv); if (moved) return; const n = document.querySelector(".tr-heroes"); if (n && Math.abs(n.getBoundingClientRect().top - Math.max(0, document.querySelector(".rail")?.getBoundingClientRect().bottom || 0) - 12) > 40) go1(); }, 1500); };
+  // (update 940) his tournaments the stats file doesn't have, from the live feed's official leaderboards: in the list too (finish,
+  // to par, rounds), and they open on how it played out, the leaderboard and his scorecard (no strokes gained or shots)
+  const extras = [], allYr = () => [...inYr, ...extras].sort((a, b) => String(b.end).localeCompare(String(a.end)));
+  const openX = (e) => { const was = st.resX?.key === e.key; st.resX = was ? null : { key: e.key, event: e.event, year: e.year, tour: e.tour, end: e.end }; st.resOpen = false; S.draw(); if (!was) toDetail(); };
   const sgRd = (e) => avg(e.rs.filter((r) => !r.eventLevel), tot);
   const drawList = (fin = new Map()) => { const pos = (e) => fin.get(e.key);
     mount(listBox, [el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t tr-evs" }, [el("thead", {}, el("tr", {}, ["Date", "Tournament", "Finish", "To par", "Rounds", "SG per round"].map((h, i) => el("th", { class: i >= 2 ? "num" : "" }, h)))),
-      el("tbody", {}, inYr.map((e) => { const o = pos(e), open = st.resOpen && st.resKey === e.key, v = sgRd(e);
-        const tr = el("tr", { class: `tr-ev${open ? " on" : ""}`, tabindex: "0", title: open ? "Close" : "Open this tournament" }, [el("td", { class: "muted" }, new Date(`${String(e.rs[0]?.date || e.end).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) })),
+      el("tbody", {}, allYr().map((e) => { const o = pos(e), open = e.x ? st.resX?.key === e.key : st.resOpen && st.resKey === e.key, v = e.x ? null : sgRd(e);
+        const tr = el("tr", { class: `tr-ev${open ? " on" : ""}`, tabindex: "0", title: open ? "Close" : "Open this tournament" }, [el("td", { class: "muted" }, new Date(`${String(e.rs?.[0]?.date || e.end).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) })),
           el("td", {}, [open ? "\u25BE " : "\u25B8 ", e.event]), el("td", { class: `num strong ${o?.pos === "1" ? "pos" : /^(CUT|MC|WD|DQ)$/i.test(o?.pos || "") ? "neg" : ""}` }, o?.pos ? (/^\d+$/.test(o.pos) ? ord(Number(o.pos)) : o.pos) : "—"),
           el("td", { class: "num" }, o?.total == null ? "—" : Number(o.total) === 0 ? "E" : Number(o.total) > 0 ? `+${o.total}` : String(o.total).replace("-", "\u2212")),
-          el("td", { class: "num" }, String(new Set(e.rs.map((r) => r.roundNo)).size)), el("td", { class: `num ${cls(v)}` }, v == null ? "—" : fmtSG(v))]);
-        const go = () => { if (open) { st.resOpen = false; } else { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; } S.draw(); if (!open) toDetail(); };
+          el("td", { class: "num" }, e.x ? (e.rounds != null ? String(e.rounds) : "\u2014") : String(new Set(e.rs.map((r) => r.roundNo)).size)), el("td", { class: `num ${cls(v)}`, title: e.x ? "Not in the stats file: scorecards only" : null }, v == null ? "—" : fmtSG(v))]);
+        const go = () => { if (e.x) { openX(e); return; } st.resX = null; if (open) { st.resOpen = false; } else { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; } S.draw(); if (!open) toDetail(); };
         tr.addEventListener("click", go); tr.addEventListener("keydown", (k) => { if (k.key === "Enter") go(); }); return tr; }))])),
       fin.size && inYr.some((e) => !fin.get(e.key)?.pos) ? el("p", { class: "muted small" }, "— : no official result saved for that tournament (the live feed has no leaderboard for it, as with some majors)") : null]); };
   drawList();
@@ -123,31 +127,40 @@ export function resultsView(S, rounds, field) {
     // (update 936) each tournament's official finish from its own tour's results; the clutch numbers from the tours picked only
     const codeOf = (e) => PI.tourCodeOf(e.rs[0]?.tour), codes = [...new Set(inYr.map(codeOf).filter(Boolean))];
     const fin = new Map(); await Promise.all(codes.map((c) => PI.ensureResults(c, yrs).catch(() => null))); for (const e of inYr) { const c = codeOf(e); if (!c) continue; const o = PI.officialSync(e.event, e.year, who, c, e.end); if (o && !o.missing) fin.set(e.key, o); }
+    { const xCodes = st.resTour === "all" ? [...new Set(toursAll.map((t) => PI.tourCodeOf(t)).filter(Boolean))] : [PI.tourCodeOf(st.resTour)].filter(Boolean), xYrs = st.resYear === "all" ? years : [st.resYear];
+      await Promise.all(xCodes.map((c) => PI.ensureResults(c, xYrs).catch(() => null)));
+      const shD0 = (d, k) => { const t = Date.parse(`${String(d).slice(0, 10)}T12:00:00`); return Number.isFinite(t) ? new Date(t + k * 864e5).toISOString().slice(0, 10) : null; };
+      for (const c of xCodes) for (const y of xYrs) for (const pe of PI.playerEvents(c, y, who)) {
+        const lo = pe.start ? shD0(pe.start, -1) : null, hi = pe.end ? shD0(pe.end, 1) : pe.start ? shD0(pe.start, 4) : null;
+        if (inYr.some((e) => e.year === String(y) && (evMatch(e.event, pe.name) || (lo && hi && String(e.end).slice(0, 10) >= lo && String(e.end).slice(0, 10) <= hi)))) continue;
+        const tourName = toursAll.find((t) => PI.tourCodeOf(t) === c) || (c === "H" ? "Korn Ferry" : "PGA"), key = `x|${pe.tid}`;
+        extras.push({ key, x: true, tid: pe.tid, event: pe.name, year: String(y), end: pe.end || pe.start, rs: [], tour: tourName, rounds: pe.maxrnd ?? null });
+        fin.set(key, { pos: pe.pos, total: pe.total, event: pe.name }); } }
     drawList(fin);
-    const n = inYr.length, posN = (e) => { const p = fin.get(e.key)?.pos; return p && /^T?\d+$/i.test(p) ? Number(String(p).replace(/^T/i, "")) : null; };
-    const missed = inYr.filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; }).length;
-    const places = inYr.map(posN).filter((v) => v != null), wins = places.filter((v) => v === 1).length, t10 = places.filter((v) => v <= 10).length;
+    const evAll = allYr(), n = evAll.length, posN = (e) => { const p = fin.get(e.key)?.pos; return p && /^T?\d+$/i.test(p) ? Number(String(p).replace(/^T/i, "")) : null; };
+    const missed = evAll.filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; }).length;
+    const places = evAll.map(posN).filter((v) => v != null), wins = places.filter((v) => v === 1).length, t10 = places.filter((v) => v <= 10).length;
     // (update 935) every card opens the tournaments behind it (tap again to close); a tournament in a list opens it below
     const detBox = el("div", { class: "tr-sc-det" }); let openK = null, cardsEl = null;
     const card = (label, big, sub, c0 = "", k = null) => { const n0 = el("div", { class: `tr-sc-card ${c0}${k ? " tap" : ""}${k && k === openK ? " on" : ""}`, ...(k ? { role: "button", tabindex: "0", title: "Show the tournaments" } : {}) }, [el("span", { class: "tr-sc-l" }, label), el("b", {}, big), sub ? el("small", {}, sub) : null]);
       if (k) { const go = () => { openK = openK === k ? null : k; cardsEl?.querySelectorAll(".tr-sc-card.tap").forEach((c) => c.classList.toggle("on", c === n0 && !!openK)); showDet(); }; n0.addEventListener("click", go); n0.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); }
       return n0; };
-    const openEv = (name, year) => { const e = inYr.find((x) => x.year === String(year) && (evMatch(x.event, name) || x.event === name)); if (!e) return null; return () => { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; S.draw(); toDetail(); }; };
+    const openEv = (name, year) => { const e = allYr().find((x) => x.year === String(year) && (evMatch(x.event, name) || x.event === name)); if (!e) return null; if (e.x) return () => openX(e); return () => { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; S.draw(); toDetail(); }; };
     const tpS = (v) => (v == null ? "—" : v === 0 ? "E" : v > 0 ? `+${v}` : `−${-v}`);
     const finTxt = (e) => { const p = fin.get(e.key)?.pos; return p ? (/^\d+$/.test(p) ? ord(Number(p)) : p) : "—"; };
     const dTxt = (e) => new Date(`${String(e.end).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) });
     // (update 937) a scorecard tournament (the PGA Tour's own name) as the stats file's tournament in the list: by name, else by
     // its dates; the list's name and date shown everywhere, and one that isn't in the stats file said so
     const shD = (d, k) => { const t = Date.parse(`${String(d).slice(0, 10)}T12:00:00`); return Number.isFinite(t) ? new Date(t + k * 864e5).toISOString().slice(0, 10) : null; };
-    const mapEv = (x) => { const ys = inYr.filter((e) => e.year === String(x.year)); let e = ys.find((e0) => evMatch(e0.event, x.ev));
+    const mapEv = (x) => { const ys = allYr().filter((e) => e.year === String(x.year)); let e = ys.find((e0) => evMatch(e0.event, x.ev));
       if (!e && x.start) { const lo = shD(x.start, -1), hi = x.end ? shD(x.end, 1) : shD(x.start, 4); e = ys.find((e0) => { const d = String(e0.end).slice(0, 10); return d >= lo && d <= hi; }); } return e || null; };
     const dOnly = (d) => new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) });
     let missingN = 0;
-    const nameX = (x) => { const e = mapEv(x); if (e) return e.event; missingN++; return el("span", {}, [x.ev, el("small", { class: "muted tr-det-miss" }, " not in the stats file")]); };
+    const nameX = (x) => { const e = mapEv(x); if (e) return e.x ? el("span", {}, [e.event, el("small", { class: "muted tr-det-miss" }, " scorecards only")]) : e.event; missingN++; return x.ev; };
     const dateX = (x) => { const e = mapEv(x), d = e ? e.end : x.end || x.start; return d ? dOnly(d) : "\u2014"; };
     const goX = (x) => { const e = mapEv(x); return e ? openEv(e.event, e.year) : null; };
     const finX = (x) => (x.pos ? (/^\d+$/.test(x.pos) ? ord(Number(x.pos)) : x.pos) : "\u2014");
-    const missNote = () => (missingN ? "\u201cNot in the stats file\u201d: the live feed's scorecards have this tournament but the stats file doesn't, so it isn't in the list below (no strokes gained for it)." : null);
+    const missNote = () => null; // (update 940: every tournament is in the list now; "scorecards only" marks those without strokes gained)
     const table = (heads, rows, note, numFrom = 2) => el("div", {}, [!rows.length ? el("p", { class: "muted" }, st.resYear === "all" ? "None on record." : `None in ${st.resYear}.`) : null, rows.length ? el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t tr-det-t" }, [el("thead", {}, el("tr", {}, heads.map((h, i) => el("th", { class: i >= numFrom ? "num" : "" }, h)))),
       el("tbody", {}, rows.map(([cells, go]) => { const tr = el("tr", { class: go ? "tr-ev" : "", tabindex: go ? "0" : null, title: go ? "Open this tournament" : null }, cells.map((c, i) => el("td", { class: i >= numFrom ? "num" : i === numFrom - 1 ? "tr-det-nm" : "" }, c))); if (go) { tr.addEventListener("click", go); tr.addEventListener("keydown", (k) => { if (k.key === "Enter") go(); }); } return tr; }))])) : null,
       note ? el("p", { class: "muted small" }, note) : null]);
@@ -157,12 +170,12 @@ export function resultsView(S, rounds, field) {
     const showDet = () => { if (!openK) { mount(detBox, null); return; } const D = DETAIL[openK]?.(); mount(detBox, D ? el("div", { class: "tr-det" }, D) : null); };
     const DETAIL = {
       _: null,
-      events: () => [el("p", { class: "fx-eyebrow" }, "Every tournament he played"), table(["Date", "Tournament", "Finish"], evRowsN(inYr))],
-      cuts: () => { const mc = inYr.filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; });
+      events: () => [el("p", { class: "fx-eyebrow" }, "Every tournament he played"), table(["Date", "Tournament", "Finish"], evRowsN(allYr()))],
+      cuts: () => { const mc = allYr().filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; });
         return [el("p", { class: "fx-eyebrow" }, mc.length ? "Missed cuts" : "Made every cut"), table(["Date", "Tournament", "Finish"], evRowsN(mc), "A missed cut: the official finish says CUT, or (no official result) two rounds or fewer.")]; },
-      wins: () => [el("p", { class: "fx-eyebrow" }, "Wins"), table(["Date", "Tournament", "Finish"], evRowsN(inYr.filter((e) => posN(e) === 1)), CL?.winList?.length ? `Where he stood going into the final round: ${CL.winList.filter((w) => st.resYear === "all" || w.year === st.resYear).map((w) => `${mapEv(w)?.event || w.ev} ${w.back ? `${w.back} back` : "leading"}`).join(" · ")}.` : null)],
-      top10: () => [el("p", { class: "fx-eyebrow" }, "Top 10 finishes"), table(["Date", "Tournament", "Finish"], evRowsN(inYr.filter((e) => posN(e) != null && posN(e) <= 10)))],
-      avg: () => [el("p", { class: "fx-eyebrow" }, "Every finish (made cuts count in the average)"), table(["Date", "Tournament", "Finish"], evRowsN(inYr.filter((e) => fin.get(e.key)?.pos)))],
+      wins: () => [el("p", { class: "fx-eyebrow" }, "Wins"), table(["Date", "Tournament", "Finish"], evRowsN(allYr().filter((e) => posN(e) === 1)), CL?.winList?.length ? `Where he stood going into the final round: ${CL.winList.filter((w) => st.resYear === "all" || w.year === st.resYear).map((w) => `${mapEv(w)?.event || w.ev} ${w.back ? `${w.back} back` : "leading"}`).join(" · ")}.` : null)],
+      top10: () => [el("p", { class: "fx-eyebrow" }, "Top 10 finishes"), table(["Date", "Tournament", "Finish"], evRowsN(allYr().filter((e) => posN(e) != null && posN(e) <= 10)))],
+      avg: () => [el("p", { class: "fx-eyebrow" }, "Every finish (made cuts count in the average)"), table(["Date", "Tournament", "Finish"], evRowsN(allYr().filter((e) => fin.get(e.key)?.pos)))],
       cont: () => { const c = CL?.contY || []; missingN = 0; const rows = c.map((x) => [[dateX(x), nameX(x), x.back ? `${x.back} back` : x.shared ? "Tied" : "Leading", x.fr ? `${x.fr} (${tpS(x.fr - x.par)})` : "—", CL.f(x.gain), x.won ? el("b", { class: "pos" }, "Won") : finX(x)], goX(x)]);
         return [el("p", { class: "fx-eyebrow" }, "In contention: within 3 shots of the lead going into the final round"),
           table(["Date", "Tournament", "Into the final round", "Final round", "vs the field", "Finish"], rows, [CL?.winList?.some((w) => w.back > 3 && (st.resYear === "all" || w.year === st.resYear)) ? "Wins from further back than 3 shots aren't \"in contention\" here; they're under Wins from behind." : null, missNote()].filter(Boolean).join(" ") || null, 2)]; },
@@ -198,6 +211,11 @@ export function resultsView(S, rounds, field) {
   })();
   const picker = el("section", { class: "panel tr-pick" }, [el("div", { class: "tr-pick-head" }, [el("p", { class: "fx-eyebrow" }, `Tournament results${who ? ` \u00b7 ${who.replace(/\s*\([^)]*\)\s*$/, "")}` : ""}`), el("div", { class: "tr-pick-sels" }, [tSel, ySel])]), sumBox,
     el("p", { class: "fx-eyebrow tr-list-h" }, `${whoL === "His" ? "His" : `${whoL}'s`} tournaments · tap one to open it`), listBox]);
+  if (st.resX) { // (update 940) a tournament the stats file doesn't have: how it played out, the leaderboard and his scorecard
+    const X = st.resX, xb = el("section", { class: "panel tr-heroes tr-xonly" }, [el("div", { class: "tr-head" }, [el("h2", {}, X.event), el("span", { class: "muted" }, `${X.year} \u00b7 ${X.tour}`)]),
+      el("p", { class: "muted small" }, "Scorecards only: this tournament isn't in the stats file, so there are no strokes gained, shot details or hole pictures. Everything below is from the official scorecards."),
+      tournamentDetail({ event: X.event, year: X.year, tour: X.tour, date: X.end, openName: who })]);
+    return [picker, xb]; }
   if (!st.resOpen) return [picker]; // (nothing opened: the season and the list only)
 
   const heroBox = el("section", { class: "panel tr-heroes" }, el("p", { class: "muted small" }, "Loading the week…"));
@@ -452,7 +470,7 @@ function raceChart(S) {
 
 /** (update 933) Leaderboards › Historical: a tournament opened from the list: how it played out (from the scorecards) and the
  *  official leaderboard, each player's scorecard a tap away. */
-export function tournamentDetail({ event, year, tour, date = null }) {
+export function tournamentDetail({ event, year, tour, date = null, openName = null }) {
   const box = el("div", { class: "tr-detail" }, el("p", { class: "muted small" }, "Loading the tournament…"));
   (async () => {
     const [PI, TS] = await Promise.all([import("./playerInsights.js"), import("./tourneyStory.js")]), code = PI.tourCodeOf(tour);
@@ -467,6 +485,7 @@ export function tournamentDetail({ event, year, tour, date = null }) {
     const pos = (p) => { const u = String(p || "").toUpperCase(); return /^(CUT|MC)$/.test(u) ? "MC" : u || "—"; };
     const head = ["Pos", "Player", ...rCols.map((r) => `R${r}`), "To par"];
     let all = false, open = null; const TOP = 25;
+    if (openName) { const k0 = nameKey(String(openName).replace(/\s*\([^)]*\)\s*$/, "")), mine = B.rows.find((x) => nameKey(x.name) === k0); if (mine) { open = String(mine.pid || mine.name); if (B.rows.indexOf(mine) >= TOP) all = true; } } // (update 940: his scorecard open to start)
     const lb = el("section", { class: "panel tr-lb" });
     const draw = () => { const rows = all ? B.rows : B.rows.slice(0, TOP);
       const tb = el("tbody", {}, rows.flatMap((r) => { const id = String(r.pid || r.name), isOpen = open === id, rr = S && r.pid ? S.roundsOf(r.pid) : null;

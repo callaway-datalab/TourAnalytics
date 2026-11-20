@@ -286,6 +286,15 @@ export function officialSync(eventName, year, playerName, code, date = null) {
   const row = (pid && e?.rows?.find((r) => String(r.pid) === pid)) || e?.rows?.find((r) => nameKey(r.name) === k);
   return row ? { pos: row.pos, total: row.total, event: e.name, of: e.rows.length } : { pos: null, event: e.name, missing: true };
 }
+/** (update 940) every tournament a player is on in a saved results file (the live feed's official leaderboards), whether or not
+ *  the stats file has it: [{ tid, name, start, end, final, pos, total, maxrnd, pid }] */
+export function playerEvents(code, year, playerName) {
+  const R = got(`results/${code}-${year}.json`); if (!R?.events) return [];
+  const pid = (/\((\d+)\)\s*$/.exec(String(playerName || "")) || [])[1], k = nameKey(String(playerName || "").replace(/\s*\([^)]*\)\s*$/, "")), out = [];
+  for (const [tid, e] of Object.entries(R.events)) { const row = (pid && e.rows?.find((r) => String(r.pid) === pid)) || e.rows?.find((r) => nameKey(r.name) === k); if (!row) continue;
+    out.push({ tid, name: e.name, start: e.start || null, end: e.end || e.start || null, final: e.final !== false, pos: row.pos, total: row.total, maxrnd: row.maxrnd ?? null, pid: row.pid ? String(row.pid) : null }); }
+  return out;
+}
 /** (update 836) the official leaderboard of an event in a year: { name, final, rows: [{ pid, name, pos, total }] } (the
  *  file's own order), or null (not loaded, or not in the file) */
 export function officialBoard(eventName, year, code, date = null) { // (update 934: date, for a renamed event)
