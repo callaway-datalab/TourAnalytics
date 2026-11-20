@@ -1482,3 +1482,5 @@ html[data-theme="light"] .sc .sc-why { background: rgba(0,0,0,0.02); border-colo
 .tr-sc-card.on { border-color: var(--gold, #d4b483); background: rgba(212,180,131,0.10); }
 .tr-sc-det:empty { display: none; } .tr-det { margin: 10px 0 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(212,180,131,0.35); background: rgba(255,255,255,0.02); }
 .tr-det .tr-det-t tr.tr-ev { cursor: pointer; } .tr-det .tr-det-t tr.tr-ev:hover td { background: rgba(255,255,255,0.04); }
+/* (update 936) Tournament Results: the tour and season pickers side by side */
+.tr-pick-sels { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -77,7 +77,12 @@ const rankIn = (vals, key, higher = true) => { const s = [...vals].sort((a, b) =
 
 /** rounds: the player's rounds on the tour picked (every year); field: every player's rounds there (the stats-file fallback). */
 export function resultsView(S, rounds, field) {
-  const st = S.st, me = S.me, rs0 = (rounds || []).filter((r) => r.event);
+  // (update 936) every tour he played: a tour picker beside the season (his main tour to start)
+  const st = S.st, me = S.me, rsAll = (rounds || []).filter((r) => r.event);
+  const tourN = new Map(); { const ly = rsAll.map(yrOf).sort().at(-1); for (const r of rsAll) if (r.tour && yrOf(r) === ly) tourN.set(r.tour, (tourN.get(r.tour) || 0) + 1); }
+  const toursAll = [...new Set(rsAll.map((r) => r.tour).filter(Boolean))].sort((a, b) => (tourN.get(b) || 0) - (tourN.get(a) || 0));
+  if (!st.resTour || !(st.resTour === "all" || toursAll.includes(st.resTour))) st.resTour = toursAll[0] || "all";
+  const rs0 = rsAll.filter((r) => st.resTour === "all" || r.tour === st.resTour);
   const evMap = new Map();
   for (const r of rs0) { const k = `${r.event}|${yrOf(r)}`; (evMap.get(k) || evMap.set(k, { key: k, event: r.event, year: yrOf(r), rs: [] }).get(k)).rs.push(r); }
   const evs = [...evMap.values()].map((e) => ({ ...e, end: e.rs.map((r) => String(r.date)).sort().at(-1) })).sort((a, b) => b.end.localeCompare(a.end));
@@ -91,6 +96,8 @@ export function resultsView(S, rounds, field) {
   const ySel = el("select", { class: "tr-sel", "aria-label": "Season" }, [...years.map((y) => el("option", { value: y }, y)), el("option", { value: "all" }, "All seasons")]);
   ySel.value = st.resYear;
   ySel.addEventListener("change", () => { st.resYear = ySel.value; st.resOpen = false; S.draw(); });
+  const tSel = toursAll.length > 1 ? el("select", { class: "tr-sel", "aria-label": "Tour" }, [...toursAll.map((t) => el("option", { value: t }, t)), el("option", { value: "all" }, "All tours")]) : null;
+  if (tSel) { tSel.value = st.resTour; tSel.addEventListener("change", () => { st.resTour = tSel.value; st.resOpen = false; st.resKey = null; S.draw(); }); }
   const inYr = evs.filter((e) => st.resYear === "all" || e.year === st.resYear), who = me?.label || "", whoL = String(who).replace(/\s*\([^)]*\)\s*$/, "").trim().split(/\s+/).slice(-1)[0] || "His";
   const sumBox = el("div", { class: "tr-sum" }, el("p", { class: "muted small" }, "Loading the season…"));
   const listBox = el("div", { class: "tr-list" });
@@ -112,8 +119,10 @@ export function resultsView(S, rounds, field) {
   drawList();
   // the cards: events, cuts, wins, top 10s, average finish; and from the scorecards, contention and clutch
   (async () => {
-    const PI = await import("./playerInsights.js"), code = PI.tourCodeOf(rs0[0]?.tour), yrs = [...new Set(inYr.map((e) => e.year))];
-    const fin = new Map(); if (code) { await PI.ensureResults(code, yrs).catch(() => null); for (const e of inYr) { const o = PI.officialSync(e.event, e.year, who, code, e.end); if (o && !o.missing) fin.set(e.key, o); } }
+    const PI = await import("./playerInsights.js"), yrs = [...new Set(inYr.map((e) => e.year))];
+    // (update 936) each tournament's official finish from its own tour's results; the clutch numbers from the tours picked only
+    const codeOf = (e) => PI.tourCodeOf(e.rs[0]?.tour), codes = [...new Set(inYr.map(codeOf).filter(Boolean))];
+    const fin = new Map(); await Promise.all(codes.map((c) => PI.ensureResults(c, yrs).catch(() => null))); for (const e of inYr) { const c = codeOf(e); if (!c) continue; const o = PI.officialSync(e.event, e.year, who, c, e.end); if (o && !o.missing) fin.set(e.key, o); }
     drawList(fin);
     const n = inYr.length, posN = (e) => { const p = fin.get(e.key)?.pos; return p && /^T?\d+$/i.test(p) ? Number(String(p).replace(/^T/i, "")) : null; };
     const missed = inYr.filter((e) => { const p = fin.get(e.key)?.pos; return p ? /^(CUT|MC)$/i.test(p) : new Set(e.rs.map((r) => r.roundNo)).size <= 2; }).length;
@@ -158,7 +167,7 @@ export function resultsView(S, rounds, field) {
     const base = [card("Events", String(n), st.resYear === "all" ? "all seasons" : st.resYear, "", "events"), card("Cuts made", `${n - missed} of ${n}`, n ? `${Math.round((100 * (n - missed)) / n)}%` : "", "", "cuts"), card("Wins", String(wins), wins ? "" : " ", wins ? "pos" : "", "wins"), card("Top 10s", String(t10), places.length ? `of ${places.length} with a finish` : "no official finishes", "", "top10"),
       card("Average finish", places.length ? ord(Math.round(places.reduce((a, b) => a + b, 0) / places.length)) : "—", places.length ? "made cuts" : "", "", "avg")];
     mount(sumBox, [cardsEl = el("div", { class: "tr-sc-cards" }, base), detBox]);
-    try { const [M0, evsC] = await Promise.all([import("./clutch.js"), PI.clutchEvents(["R", "H"], yrs.length ? yrs : years)]); const all = M0.clutchFrom(evsC), o = [...all.values()].find((x) => nameKeyOf(x.name) === nameKeyOf(who)), f = M0.clutchFmt;
+    try { const [M0, evsC] = await Promise.all([import("./clutch.js"), PI.clutchEvents(codes, yrs.length ? yrs : years)]); const all = M0.clutchFrom(evsC), o = [...all.values()].find((x) => nameKeyOf(x.name) === nameKeyOf(who)), f = M0.clutchFmt;
       if (o) { const cont = o.cont.filter((c) => st.resYear === "all" || c.year === st.resYear); CL = { o, f, contY: cont, winList: o.winList };
         const lds = cont.filter((c) => c.back === 0), wb = (o.winList || []).filter((w) => w.back > 0 && (st.resYear === "all" || w.year === st.resYear));
         mount(sumBox, [cardsEl = el("div", { class: "tr-sc-cards" }, [...base,
@@ -169,7 +178,7 @@ export function resultsView(S, rounds, field) {
           o.label ? card("Type", o.label.t, o.label.why, o.label.k === "fader" ? "neg" : "pos", "type") : null].filter(Boolean)), detBox,
           el("p", { class: "muted small" }, "Tap a card for the tournaments behind it. Contention and clutch from every saved scorecard (Scouting › Clutch explains them).")]); showDet(); } } catch (e2) { console.warn("clutch", e2); }
   })();
-  const picker = el("section", { class: "panel tr-pick" }, [el("div", { class: "tr-pick-head" }, [el("p", { class: "fx-eyebrow" }, `Tournament results${who ? ` \u00b7 ${who.replace(/\s*\([^)]*\)\s*$/, "")}` : ""}`), ySel]), sumBox,
+  const picker = el("section", { class: "panel tr-pick" }, [el("div", { class: "tr-pick-head" }, [el("p", { class: "fx-eyebrow" }, `Tournament results${who ? ` \u00b7 ${who.replace(/\s*\([^)]*\)\s*$/, "")}` : ""}`), el("div", { class: "tr-pick-sels" }, [tSel, ySel])]), sumBox,
     el("p", { class: "fx-eyebrow tr-list-h" }, `${whoL === "His" ? "His" : `${whoL}'s`} tournaments · tap one to open it`), listBox]);
   if (!st.resOpen) return [picker]; // (nothing opened: the season and the list only)
 
