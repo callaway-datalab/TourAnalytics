@@ -153,10 +153,12 @@ export function resultsView(S, rounds, field) {
       const rIds = [...new Set([...cR.map(String), ...myT.map((t) => String(t.rd))])].sort((a, b) => Number(a) - Number(b));
       if (!rIds.length) { mount(holder, el("p", { class: "muted small" }, `No hole-by-hole scores for ${o.name} here yet: they come from the live feed's scorecards${W ? "" : " (or the tournament's shots in Strategy Maps)"}.`)); return; }
       let rd = o.me && rIds.includes(String(st.resRound)) ? String(st.resRound) : rIds[0], hole = null;
+      if (o.me && st.resHole && rd === String(st.resRound) && myT.some((t) => String(t.rd) === rd && t.h === st.resHole)) { hole = st.resHole; st.resHole = null; } // (update 926: a shot picked in the pop-up)
       const tOf = (h) => myT.find((t) => String(t.rd) === rd && t.h === h);
       const parOf = (h) => (C?.par?.[h - 1] > 0 ? C.par[h - 1] : tOf(h)?.par ?? tOf(h)?.meta?.par?.[h - 1] ?? null);
       const scoreOf = (h) => { const v = C?.rounds?.[rd]?.[o.pid]?.[h - 1]; if (v > 0) return v; const t = tOf(h); return t?.s != null && parOf(h) != null ? parOf(h) + t.s : null; };
       const sgOf = (h) => { const t = tOf(h); return t ? t.qs.reduce((a, q) => a + (q.sg || 0), 0) : null; };
+      const sgT = (v) => (matchMedia("(max-width: 520px)").matches ? `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(1)}` : fmtSG(v)); // (update 926: a phone's narrow cells, one decimal)
       const cardBox = el("div", { class: "tr-card" }), holeBox = el("div", { class: "tr-hole" }), tabs = el("div", { class: "tr-rounds", role: "group", "aria-label": "Round" });
       const draw = () => {
         const fromC = Array.isArray(C?.rounds?.[rd]?.[o.pid]), holes = fromC ? Array.from({ length: 18 }, (_, i) => i + 1) : [...new Set(myT.filter((t) => String(t.rd) === rd).map((t) => t.h))].sort((a, b) => a - b);
@@ -170,7 +172,7 @@ export function resultsView(S, rounds, field) {
           return [el("tr", { class: "tr-sc-hr" }, [el("th", {}, "Hole"), ...hs.map((h) => el("th", {}, String(h))), el("th", {}, lab)]),
             el("tr", {}, [el("th", {}, "Par"), ...hs.map((h) => el("td", { class: "muted" }, parOf(h) ?? "")), el("td", { class: "muted" }, sum(parOf) ?? "")]),
             el("tr", {}, [el("th", {}, "Score"), ...hs.map(cell), el("td", { class: "tr-tot" }, sum(scoreOf) ?? "")]),
-            withSG ? el("tr", {}, [el("th", {}, "SG"), ...hs.map((h) => { const v = sgOf(h); return el("td", { class: `tr-sg ${cls(v)}` }, v == null ? "" : fmtSG(v)); }), el("td", { class: `tr-sg ${cls(sum(sgOf))}` }, sum(sgOf) == null ? "" : fmtSG(sum(sgOf)))]) : null].filter(Boolean); };
+            withSG ? el("tr", {}, [el("th", {}, "SG"), ...hs.map((h) => { const v = sgOf(h); return el("td", { class: `tr-sg ${cls(v)}` }, v == null ? "" : sgT(v)); }), el("td", { class: `tr-sg ${cls(sum(sgOf))}` }, sum(sgOf) == null ? "" : sgT(sum(sgOf)))]) : null].filter(Boolean); };
         mount(cardBox, [el("div", { class: "tr-sc-scroll" }, el("table", { class: "tr-sc-t" }, el("tbody", {}, [...half(holes.filter((h) => h <= 9), "Out"), ...half(holes.filter((h) => h > 9), "In")]))),
           el("p", { class: "muted small" }, withSG ? `Tap a hole for its shots and the hole · ${[...new Set(myT.filter((t) => String(t.rd) === rd).map((t) => t.meta.name))].join(" & ")}` : "From the official scorecard (no shots for this round in Strategy Maps, so no hole pictures or shot breakdown)")]);
         drawHole();
@@ -315,6 +317,8 @@ export function resultsView(S, rounds, field) {
       const back = el("div", { class: "tr-pop-back" }); back.addEventListener("click", close);
       const holder = el("div", { class: "tr-pop-scroll tr-shots-scroll" }), head = el("p", { class: "muted small" });
       const tg = el("div", { class: "tr-rounds", role: "group", "aria-label": "Which shots" });
+      // one of theirs: its hole, opened in their scorecard on the leaderboard (update 926)
+      const openHole = (x) => { close(); st.resRound = String(x.T.rd); st.resHole = x.T.h; st.resLbOpen = null; S.draw(); setTimeout(() => document.querySelector(".tr-sc-in .tr-hole h3")?.scrollIntoView({ behavior: "smooth", block: "start" }), 900); };
       const draw = (m) => {
         mount(tg, [["mine", `${me?.label || "Their"} shots (${myN})`], ["field", `Every shot in the field (${W.nShots.toLocaleString()})`]].map(([v, l]) => { const b = el("button", { type: "button", class: `tr-rd${v === m ? " on" : ""}`, "aria-pressed": String(v === m) }, l); b.addEventListener("click", () => { if (v !== m) draw(v); }); return b; }));
         const list = m === "mine" ? myShots : W.shots, f = m === "field";
@@ -322,11 +326,25 @@ export function resultsView(S, rounds, field) {
         let target = null;
         // (update 765) where each shot started and finished (lie and distance; the last one holed); one of theirs opens its hole
         const endOf = (x) => { const nx = x.T.qs[x.T.qs.indexOf(x.q) + 1]; return nx ? [cap(nx.lie), dTxt(nx)] : x.T.s != null ? ["Holed", "In"] : ["—", "—"]; };
+        // (update 926) a phone: fewer, fuller columns (the shot: round, hole and part of the game; from → to; SG; its rank)
+        const ph = matchMedia("(max-width: 600px)").matches, CATS3 = { OTT: "Tee shot", APP: "Approach", ARG: "Short game", PUTT: "Putt" }, lastN = (n) => String(n || "").trim().split(/\s+/).slice(-1)[0];
+        if (ph) {
+          const rows = list.map((x, i) => { const q = x.q, mine = x.pk === pk, [eL, eD] = endOf(x), tr = el("tr", { class: [f && mine ? "mine" : null, q === focus ? "target" : null, mine ? "tr-tap" : null].filter(Boolean).join(" ") || null },
+            [el("td", { class: "num" }, String(i + 1)), f ? el("td", { class: "tr-sh-who" }, lastN(x.T.name)) : null,
+              el("td", { class: "tr-sh-what" }, [el("b", {}, `R${x.T.rd} · No. ${x.T.h}`), el("small", {}, CATS3[q.cat] || CATL[q.cat] || "")]),
+              el("td", { class: "tr-sh-what" }, [el("span", {}, `${cap(q.lie)} ${dTxt(q)}`), el("small", {}, eL === "Holed" ? "→ holed" : `→ ${eL}${eD !== "—" ? ` ${eD}` : ""}`)]),
+              el("td", { class: `num strong ${cls(x.sg)}` }, fmtSG(x.sg)), f ? null : el("td", { class: "num muted" }, ord(q.rank))]); if (q === focus) target = tr; return tr; });
+          mount(holder, el("table", { class: "tr-shots tr-shots-ph" }, [el("thead", {}, el("tr", {}, ["#", f ? "Player" : null, "Shot", "From → to", "SG", f ? null : "Field"].filter(Boolean).map((x0, i) => el("th", { class: i === 0 || /SG|Theirs|Field/.test(x0) ? "num" : null }, x0)))), el("tbody", {}, rows)]));
+          mount(head, f ? `Every shot that week, best first; ${me?.label || "their"} shots highlighted (tap one for its hole).` : `Every shot ${me?.label || "they"} hit that week, best first; last column: its rank among all ${W.nShots.toLocaleString()} in the field.`);
+          rows.forEach((tr, i) => { const x = list[i]; if (x.pk !== pk) return; tr.addEventListener("click", () => openHole(x)); });
+          requestAnimationFrame(() => { if (target) holder.scrollTop = Math.max(0, target.offsetTop - holder.clientHeight / 2); });
+          return;
+        }
         const rows = list.map((x, i) => { const q = x.q, mine = x.pk === pk, [eL, eD] = endOf(x), tr = el("tr", { class: [f && mine ? "mine" : null, q === focus ? "target" : null, mine ? "tr-tap" : null].filter(Boolean).join(" ") || null, title: mine ? `Open hole ${x.T.h}, round ${x.T.rd}` : null }, [
           el("td", { class: "num" }, String(i + 1)), f ? el("td", {}, x.T.name) : null, el("td", {}, `R${x.T.rd}`), el("td", {}, String(x.T.h)), el("td", {}, CATL[q.cat] || ""), el("td", {}, cap(q.lie)), el("td", {}, dTxt(q)), el("td", {}, eL), el("td", {}, eD),
           el("td", { class: `num ${cls(x.sg)}` }, fmtSG(x.sg)), el("td", { class: "num muted" }, f ? (mine ? `${ord(q.myRank)} of ${myN} of theirs` : "") : `${ord(q.rank)} of ${W.nShots.toLocaleString()}`)]); if (q === focus) target = tr; return tr; });
         mount(holder, el("table", { class: "tr-shots" }, [el("thead", {}, el("tr", {}, ["Rank", f ? "Player" : null, "Round", "Hole", "Category", "Start lie", "Start distance", "End lie", "End distance", "SG", f ? "Their rank" : "In the field"].filter(Boolean).map((x0, i) => el("th", { class: i === 0 || /SG|rank|field/i.test(x0) ? "num" : null }, x0)))), el("tbody", {}, rows)]));
-        rows.forEach((tr, i) => { const x = list[i]; if (x.pk !== pk) return; tr.addEventListener("click", () => { close(); st.resRound = x.T.rd; st.resHole = x.T.h; S.draw(); setTimeout(() => document.querySelector(".tr-hole")?.scrollIntoView({ behavior: "smooth", block: "start" }), 600); }); });
+        rows.forEach((tr, i) => { const x = list[i]; if (x.pk !== pk) return; tr.addEventListener("click", () => openHole(x)); });
         requestAnimationFrame(() => { if (target) holder.scrollTop = Math.max(0, target.offsetTop - holder.clientHeight / 2); });
       };
       const box = el("section", { class: "tr-pop tr-pop-wide", role: "dialog", "aria-modal": "true" }, [xb, el("p", { class: "fx-eyebrow" }, `${ev.event} · ${ev.year}`), el("h3", {}, "Shot by shot, ranked"), tg, head, holder]);

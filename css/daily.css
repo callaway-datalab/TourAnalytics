@@ -1428,3 +1428,16 @@ th.bs-lastn .bs-lastn-w { position: relative; top: 4px; }
   .tr-lb-t { font-size: 0.8rem; } .tr-lb-t th, .tr-lb-t td { padding: 6px 4px; } .tr-lb-t td.tr-rd { padding: 6px 3px; }
   .tr-lb-t tr.tr-lb-row td:nth-child(2) { max-width: 128px; overflow: hidden; text-overflow: ellipsis; }
 }
+/* (update 926) a scorecard inside the leaderboard: its cells centred like the scorecard (the leaderboard's left-aligned cells had leaked in) */
+.tr-lb-t .tr-sc-in .tr-sc-t th, .tr-lb-t .tr-sc-in .tr-sc-t td { text-align: center !important; padding: 6px 2px; white-space: nowrap; }
+.tr-lb-t .tr-sc-in .tr-sc-t th:first-child { text-align: left !important; padding-left: 6px; }
+.tr-lb-t .tr-sc-in .tr-shots th, .tr-lb-t .tr-sc-in .tr-shots td { text-align: left !important; } .tr-lb-t .tr-sc-in .tr-shots .num { text-align: right !important; }
+.tr-lb-t .tr-sc-in .tr-sc-t td.tr-sg { font-size: 0.66rem; letter-spacing: -0.02em; }
+/* (update 926) the shots pop-up on a phone: five columns, two lines each, no sideways scrolling */
+.tr-shots-ph { width: 100%; table-layout: auto; font-size: 0.8rem !important; }
+.tr-shots-ph th, .tr-shots-ph td { padding: 6px 5px !important; white-space: nowrap; vertical-align: top; }
+.tr-shots-ph th { font-size: 0.62rem !important; }
+.tr-shots-ph .tr-sh-what { white-space: normal; } .tr-shots-ph .tr-sh-what b, .tr-shots-ph .tr-sh-what span { display: block; font-weight: 600; } .tr-shots-ph .tr-sh-what small { display: block; color: var(--muted, #8e8e93); font-size: 0.72rem; }
+.tr-shots-ph .tr-sh-who { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) { .tr-pop .tr-rounds .tr-rd { font-size: 0.78rem; padding: 4px 10px; } .tr-pop .tr-shots-scroll { max-height: 62vh; } }
+.tr-shots-ph .tr-sh-who { max-width: 62px; } .tr-shots-ph th, .tr-shots-ph td { padding: 6px 4px !important; }
