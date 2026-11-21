@@ -477,7 +477,8 @@ export function keyZones({ zones, total, hasPin, hasN }, usePlayer = false) {
 const RDBU = [[5, 48, 97], [33, 102, 172], [67, 147, 195], [146, 197, 222], [209, 229, 240], [247, 247, 247], [253, 219, 199], [244, 165, 130], [214, 96, 77], [178, 24, 43], [103, 0, 31]];
 const rdbu = (t) => { const x = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0.5)) * (RDBU.length - 1), i = Math.min(RDBU.length - 2, Math.floor(x)), f = x - i; return RDBU[i].map((c, k) => Math.round(c + (RDBU[i + 1][k] - c) * f)); };
 /** As in the course report: par 3s and 4s from −0.5 to +0.5, par 5s from −1 to +0.5 (par in the middle of each). */
-export const scoreT = (v, par) => (par >= 5 ? (v < -0.5 ? 0.5 * (v + 1) / 0.5 : 0.5 + 0.5 * (v + 0.5) / 1) : 0.5 + v);
+// (update 947) one scale on every hole: white at par, full blue half a stroke under (birdie side), full red half a stroke over
+export const scoreT = (v) => 0.5 + v;
 /** The zones over an image: mode "zones" (aim / avoid against zones as far out) or "score" (the scoring itself). */
 // (update 461) a canvas as big as it shows (zoomed in too, so it stays sharp), kept under what phones allow (~16 MP)
 // (update 532) a phone: each canvas at most 2.5 million pixels (about 10 MB); a computer 14 million. iPhones reload the

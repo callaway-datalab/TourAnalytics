@@ -517,10 +517,17 @@ export function shotAggregator() {
             const ppy = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 3;
             // zones: shots of the same lie in the same square; squares about 2 yards across on and by the green, growing
             // to 12 yards far out (5% of the distance), so the map is fine where it matters and not huge
+            // (update 947) a Shot tab's map (want = k + 1): every shot played from where shot k finishes, whatever its stroke
+            // number (stroke 2 or later), its strokes to hole out counted as if you got there in k shots: the same shots, scored
+            // the same way, as the circle tool and Cal's Read. "Where shot k finishes": within a 5 yd square (or the 8 round it)
+            // of a shot that really was stroke k + 1
+            const areaOf = (want) => { if (!want) return null; const A = 5 * ppy, on = new Set();
+              for (let i = 0; i < P.shots.length; i += 6) if (P.shots[i + 5] === want) on.add(`${Math.floor(P.shots[i] / A)}|${Math.floor(P.shots[i + 1] / A)}`);
+              return (x, y) => { const cx = Math.floor(x / A), cy = Math.floor(y / A); for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (on.has(`${cx + dx}|${cy + dy}`)) return true; return false; }; };
             const zoneRows = (want) => {
-              const cells = new Map();
+              const cells = new Map(), inArea = areaOf(want);
               for (let i = 0; i < P.shots.length; i += 6) {
-                if (want && P.shots[i + 5] !== want) continue;
+                if (want && (!(P.shots[i + 5] >= 2) || !inArea(P.shots[i], P.shots[i + 1]))) continue;
                 const x = P.shots[i], y = P.shots[i + 1], L = P.shots[i + 2], d = P.shots[i + 3], v = P.shots[i + 4];
                 const yd = d < 0 ? (pinX != null ? Math.hypot(x - pinX, y - pinY) / ppy : 50) : L === 4 ? d / 3 : d;
                 const band = yd < 15 ? 2 : yd < 40 ? 3 : yd < 90 ? 5 : yd < 170 ? 8 : 12, size = band * ppy;
