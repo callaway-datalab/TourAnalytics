@@ -58,6 +58,18 @@ export async function render(main, { flash, routeId }) {
   let enteredUpdated = null;
   let pickerRef = null; // the player search (so the leaderboard can pick a player)
   let pendingNote = ""; // (said once the file that was switched to has loaded)
+  // (update 951) a phone: the lie / distance detail (about 30 MB once unpacked) only on the Stats pages that use it (Player
+  // Stats, Focus, the rankings); Tournament Results, Course Fit, Practice, Comparisons, the bag and Scouting do without it.
+  // Loaded on top of those pages' own work it ran the phone out of memory, and iPhone reloaded the page.
+  const PHONE = (() => { try { return matchMedia("(hover: none) and (pointer: coarse)").matches; } catch { return false; } })();
+  const NO_DETAIL = new Set(["results", "fit", "practice", "compare", "bag", "scout"]);
+  const viewNow = () => dashState.view2 || new URLSearchParams(location.hash.split("?")[1] || "").get("view") || "full";
+  const detailHere = () => !PHONE || !NO_DETAIL.has(viewNow());
+  let liteDs = null;
+  if (PHONE) { const here0 = location.hash.split("?")[0]; const onV = () => setTimeout(() => { if (location.hash.split("?")[0] !== here0) { removeEventListener("ta-stats-view", onV); return; }
+      const ds = liteDs; if (!ds || !detailHere() || fileId !== ds.id || source !== "tour") return;
+      const tt = dashState.tour?.[0] ?? activeTour() ?? null, k = detailKeyOf(ds, tt); if (!detailCache.has(k) && detailWhy.get(k) === undefined) applyDetail(ds, k, tt, yearsWanted()); }, 80);
+    addEventListener("ta-stats-view", onV); }
   let loadNote = "";    // (players whose rows didn't load)
   // (hidden while loading, so Tour Events / Entered Rounds don't flash outside the Filters panel; shown
   // only when there's nothing to draw, so the other source can still be picked)
@@ -259,6 +271,7 @@ export async function render(main, { flash, routeId }) {
   // only for the player picked (fetched when they're picked). Loading every player's rows of a big file is more
   // than a phone's browser allows a page to hold: it stops the page and reloads it, over and over.
   async function refreshLite(ds, token) {
+    liteDs = ds;
     const idx = detectColumns(ds.columns || []);
     const uploaded = ds.uploadedAt?.toMillis?.() ?? 0;
     // (update 538) the lie / distance detail of the tour on screen only (a file built by tour); the other tours' rounds
@@ -300,7 +313,7 @@ export async function render(main, { flash, routeId }) {
     const ranked = fieldPlayers.some((p) => p.summaryOnly);
     const why = detailWhy.get(dk);
     const note = !ranked ? "The rankings for this file haven\u2019t been built yet: use Rebuild rankings on Upload Data (it runs in the cloud). Here you can still pick a player to see their own numbers."
-      : why === undefined || why === null ? "Loading lie and distance detail\u2026"
+      : why === undefined || why === null ? (detailHere() ? "Loading lie and distance detail\u2026" : "")
       : why === "paused" ? "Lie and distance ranks are paused: this month\u2019s budget was reached."
       : why === "none" || why === "stale" ? "Lie and distance ranks appear once the rankings are rebuilt (Upload Data \u2192 Rebuild rankings)."
       : why === "phone" || String(why).startsWith("phone:") ? (() => { // (update 537; 541: which reason)
@@ -335,6 +348,7 @@ export async function render(main, { flash, routeId }) {
   // (update 569) the detail put into the dashboard already on screen (no blank page, no redraw from scratch): it came in,
   // or the tour or seasons changed. Loaded first if it isn't here yet.
   async function applyDetail(ds, dk, tour, years) {
+    if (!detailHere()) return; // (update 951: a phone, on a page that doesn't use it)
     lastDetailKey = dk;
     if (!detailCache.has(dk)) {
       if (detailWhy.get(dk) !== undefined) return; // (already loading: that call puts it in)

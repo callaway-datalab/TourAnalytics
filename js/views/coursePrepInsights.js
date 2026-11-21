@@ -9,6 +9,9 @@ import { BRAND, TAG, readCard, readFor, playerAim, playerProfileFrom } from "../
 import { heatData, listHeatCourses, withMerges, pinsOn, pinLabel } from "../courseHeat.js";
 import { pickWho, playerData, historyBody } from "./coursePrepExtras.js";
 import { playerTrails, trailSG, bucketOf, ATT_B, skillsOf } from "../courseShots.js";
+// (update 951) a phone: the field's lie / distance detail (about 30 MB unpacked) isn't loaded here on top of the course maps; it ran
+// the phone out of memory and iPhone reloaded the page. Only the winners' distances column, which needs it, is left out.
+const PHONE_951 = (() => { try { return matchMedia("(hover: none) and (pointer: coarse)").matches; } catch { return false; } })();
 
 const SC = { e: ["Eagle+", "#1f4fd1"], b: ["Birdie", "#8fd3ff"], p: ["Par", "#f2f2f2"], g: ["Bogey+", "#ff9f43"] };
 const toPar = (v) => (v == null ? "—" : v > 0 ? `+${v}` : v === 0 ? "E" : `−${Math.abs(v)}`);
@@ -56,7 +59,7 @@ export async function drawInsights(ctx, course) {
     const toMap = (h, pin = null) => ctx.go({ name: "prepHeat", course: { ...course, startHole: h, ...(pin ? { startPin: pin, calCircles: true } : {}) } }); // (update 592: a pin's read: that pin, Cal's circles on)
     // (update 849) Course History is on this page now: the player's own rounds here (their finishes, each part of the game, against the field here)
     const histSec = who && pd ? el("section", { class: "ci2-hist" }, [el("h2", { class: "ci2-h" }, `${who.label.toUpperCase()} AT ${course.name.toUpperCase()}`), historyBody(course, who, pd)]) : null;
-    if (histSec && pd?.ds) { const me = who; import("../fieldStore.js").then((m) => m.getFieldDetail(pd.ds.id, pd.ds.uploadedAt?.toMillis?.() ?? 0)).then((rr) => { if (who !== me || !rr?.players?.length || !histSec.isConnected) return; const ui = { open: new Set() }; const redo = () => mount(histSec, [histSec.firstChild, historyBody(course, me, pd, ui, rr.players, redo)]); redo(); }).catch(() => {}); }
+    if (histSec && pd?.ds && !PHONE_951) { const me = who; import("../fieldStore.js").then((m) => m.getFieldDetail(pd.ds.id, pd.ds.uploadedAt?.toMillis?.() ?? 0)).then((rr) => { if (who !== me || !rr?.players?.length || !histSec.isConnected) return; const ui = { open: new Set() }; const redo = () => mount(histSec, [histSec.firstChild, historyBody(course, me, pd, ui, rr.players, redo)]); redo(); }).catch(() => {}); }
     // (update 862) how the course is won (better shots or more of them; a few holes or everywhere) and, with a player picked,
     // how their misses from every course on record suit it
     let fitSec = null;

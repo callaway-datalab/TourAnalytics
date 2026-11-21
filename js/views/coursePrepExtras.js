@@ -10,6 +10,9 @@ import { effectiveTeam } from "../preview.js";
 import { teamLabels } from "../names.js";
 import { CATEGORIES, detectColumns, isShotData, prepare, summaryPlayers, sameCourse, courseKey, fmtSG, distLead } from "../sg.js";
 import { tile, SG, sgCls } from "./practiceShot.js";
+// (update 951) a phone: the field's lie / distance detail (about 30 MB unpacked) isn't loaded here on top of the course maps; it ran
+// the phone out of memory and iPhone reloaded the page. Only the winners' distances column, which needs it, is left out.
+const PHONE_951 = (() => { try { return matchMedia("(hover: none) and (pointer: coarse)").matches; } catch { return false; } })();
 
 /* ------------------------------------------------ the documents you can see ------------------------------------------------ */
 let docsCache = null; // { at, docs }
@@ -255,7 +258,7 @@ export async function drawHistory(ctx, course) {
     const ui = { open: new Set() };
     const draw = (detail) => mount(out, historyBody(course, me, data, ui, detail, () => draw(detail)));
     draw(null);
-    if (data.ds) import("../fieldStore.js").then((m) => m.getFieldDetail(data.ds.id, data.ds.uploadedAt?.toMillis?.() ?? 0)).then((r) => { if (who === me && r?.players?.length) draw(r.players); }).catch(() => {});
+    if (data.ds && !PHONE_951) import("../fieldStore.js").then((m) => m.getFieldDetail(data.ds.id, data.ds.uploadedAt?.toMillis?.() ?? 0)).then((r) => { if (who === me && r?.players?.length) draw(r.players); }).catch(() => {});
   }
   show();
 }
