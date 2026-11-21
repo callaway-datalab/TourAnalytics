@@ -1646,3 +1646,10 @@ html[data-theme="light"] .cf-more > summary { color: #7a5a22; }
 .cf-rec-how { margin: 0 0 4px !important; }
 .cf-yrs td, .cf-yrs th { padding: 5px 6px !important; font-size: 0.82rem; }
 .cf-yrs td:nth-child(2) { white-space: normal !important; }
+/* (update 961) phones: Start round and a round's hole bar sit just above the bottom bar (they were underneath it), and the page
+   scrolls clear of both; with the keyboard up (the bottom bar hides) they go back to the bottom */
+@media (max-width: 640px) {
+  .entry-bar { bottom: var(--botbar-h, 0px) !important; z-index: 890 !important; }
+  html.kb-open .entry-bar { bottom: 0 !important; }
+  main:has(.entry-bar) { padding-bottom: calc(var(--botbar-h, 0px) + 96px) !important; }
+}

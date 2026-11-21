@@ -523,6 +523,9 @@ export function renderShell(root, { previewClient, currentRoute }) {
   ]);
   // (the bottom bar lives on the page itself: inside the header it would scroll away with it)
   document.querySelector("body > .botbar")?.remove(); document.body.append(bot);
+  // (update 961) the bottom bar's height, for bars that sit just above it (Start round, a round's hole bar): they were pinned to
+  // the very bottom, under it, so on a phone there was no Start round button
+  { const setH = () => document.documentElement.style.setProperty("--botbar-h", `${bot.offsetHeight || 0}px`); setH(); try { new ResizeObserver(setH).observe(bot); } catch { /* */ } addEventListener("resize", setH); }
   // (update 281) Going to another page keeps the header that's already there (no flicker): when it would come out the
   // same, only which link is lit changes, and just the page below is replaced.
   const old = root.querySelector(":scope > .shell > .rail");
