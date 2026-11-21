@@ -21,6 +21,28 @@ const chat = []; // [{ who: "me" | "callie", text, table?, note?, err? }] (kept 
 let editing = -1; // (update 599) the index in chat of the question being edited (-1: none)
 let pending = null; // (update 261) Callie asked which range: { plan, ps, missing, options }
 let lastPlayers = [], busy = false, panel = null, playersP = null, exList = [];
+// (update 956) Cal the caddie (caddie.js): the round in progress run by talking; answers said out loud when you used your voice
+let askVoice = false, onCourse = null;
+const quickW = (p) => Promise.race([Promise.resolve(p).catch((e) => console.warn("caddie save", e)), new Promise((r) => setTimeout(r, 1500))]); // (no signal: saved on the phone, sent later)
+function caddieDeps() {
+  return {
+    getRound: async () => (await currentRound().catch(() => null))?.cur || null,
+    listRounds: async () => { const { getState } = await import("./auth.js"), st = getState(); const { myEntryKey } = await import("./views/dataEntry.js"), { watchMyRounds } = await import("./rounds.js");
+      return new Promise((res) => { let un = null, done = false; const end = (l) => { if (done) return; done = true; try { un?.(); } catch { /* */ } res(l || []); }; un = watchMyRounds(st, myEntryKey(st), (l) => { if (l.length) end(l); }); setTimeout(() => end([]), 4000); }); },
+    getBag: async () => { const { getState } = await import("./auth.js"), st = getState(), B = await import("./bag.js"); const clubs = await B.getBag(st.user?.uid).catch(() => []); return (clubs || []).map((c) => ({ id: c.id || null, label: B.clubLabel(c), model: B.clubMake(c), cat: c.cat, type: c.type, yards: Number(c.yards) || null })).filter((c) => c.label); },
+    saveHole: async (pk, id, n, st) => { const m = await import("./rounds.js"); await quickW(m.saveHole(pk, id, n, st)); },
+    saveQuickHole: async (pk, id, n, q) => { const m = await import("./rounds.js"); await quickW(m.saveQuickHole(pk, id, n, q)); },
+    updateRound: async (pk, id, f) => { const m = await import("./rounds.js"); await quickW(m.updateRound(pk, id, f)); },
+    // (update 957) the round page on screen: what's typed there saved first; then it shows the hole Cal changed (the save
+    // itself comes back from the database and redraws the card at once)
+    beforeSave: async () => { const P = window.__calRoundPage; if (P && window.__calShotPage === P.tok) await P.flush().catch(() => {}); },
+    show: (r, n) => { const P = window.__calRoundPage; if (P && window.__calShotPage === P.tok && P.id === r.id) P.show(n); },
+  };
+}
+async function caddieTry(q) {
+  try { const C = await import("./caddie.js"); const r = await C.caddieAnswer(q, caddieDeps()); if (r) { try { localStorage.setItem("ta.calUsed", "true"); } catch { /* */ } } return r; } catch (e) { console.warn("caddie", e); return null; } // (update 957: used once: no more nudges)
+}
+async function say(text) { if (!text) return; try { (await import("./caddie.js")).speak(text); } catch { /* */ } }
 const roundsCache = new Map(); // player key → their rounds (full detail)
 
 /* ---------------------------------------------------------------- what can be asked about */
@@ -653,7 +675,14 @@ async function answerForecast(ps, question, local) {
   };
 }
 const ps0 = (plan, local) => (plan.players?.length || local.players?.length) > 0;
-async function ask(question) {
+async function ask(question, opts = {}) {
+  askVoice = !!opts.voice;
+  // (update 956) the caddie first: scores, shots, the round, your history, a club, the hole
+  { const cd = await caddieTry(question);
+    if (cd?.hush) { (await import("./caddie.js")).hush(); return; }
+    if (cd) { remember(question); chat.push({ who: "me", text: question });
+      if (cd.delegate === "strategy") { busy = true; draw(); const res = await answerStrategy(cd.q).catch(() => ({ text: "I couldn\u2019t work out the strategy for that hole just now." })); busy = false; chat.push({ who: "callie", q: question, ...res, strat: true }); draw(); if (askVoice) say(res.text); return; }
+      const { toast: _t, asking: _a, ...m } = cd; void _t; void _a; chat.push({ who: "callie", q: question, ...m, strat: true }); draw(); if (askVoice) say(cd.text); return; } }
   if (!pending) remember(question);
   const picked = pickedOption(question);
   if (picked) return choose(picked, question);
@@ -668,7 +697,7 @@ async function ask(question) {
   if (pending) { pending = null; for (const m of chat) delete m.choices; }
   chat.push({ who: "me", text: question });
   busy = true; draw();
-  const reply = (o) => { chat.push({ who: "callie", q: question, ...o }); busy = false; draw(); };
+  const reply = (o) => { chat.push({ who: "callie", q: question, ...o }); busy = false; draw(); if (askVoice && o?.text) say(o.text); };
   try {
     const list = await playersYouCanSee();
     // (update 589) "the hole strategy on hole 2 at Torrey Pines South into a back left pin": Cal's Read
@@ -687,6 +716,13 @@ async function ask(question) {
       // (update 685) Enter New Round, not asked for a new one: the round in progress, when there is one
       if (nav?.go?.href === "#/entry" && !/\b(new|start|begin|another)\b/i.test(question)) { const r = await currentRound().catch(() => null);
         if (r) { nav.go = { href: r.href, label: "Open the round \u2192", nav: true }; nav.text = nav.auto ? `Opening your round${r.cur.course ? ` at **${r.cur.course}**` : ""}.` : `Your round in progress${r.cur.course ? ` at **${r.cur.course}**` : ""} is on **Enter New Round** (under **Play**).`; } }
+      // (update 955) "start a round at Torrey Pines North using my saved scorecard": the new round's page, with what was said
+      // filled in there (the course from the saved scorecards, tees, date, 9 holes)
+      if (nav?.go?.href === "#/entry" && /\b(new|start|begin|another)\b/i.test(question)) { const pf = roundPrefill(question);
+        nav.go = { href: "#/entry/new", label: "Open the new round \u2192", nav: true };
+        if (pf) { try { sessionStorage.setItem("cal.round", JSON.stringify({ ...pf, at: Date.now() })); } catch { /* */ }
+          nav.text = `Starting a new round${pf.course ? ` at **${pf.course.replace(/\b\w/g, (m) => m.toUpperCase())}**` : ""}: I\u2019ll fill in ${[pf.course ? (pf.saved ? "the course from your saved scorecard" : "the course") : null, pf.tees ? `the ${pf.tees} tees` : null, pf.date ? "the date" : null, pf.holes === 9 ? "9 holes" : null].filter(Boolean).join(", ") || "what I can"}. Check it before you start.`; }
+        else nav.text = "Starting a new round on **Enter New Round** (under **Play**)."; }
       if (nav) { const { auto, ...msg } = nav; reply({ ...msg, strat: true }); if (auto && msg.go) setTimeout(() => { closeCallie(); location.hash = msg.go.href; }, 700); return; } }
     if (isStrategyQ(question) || isPinReply(question) || isStratReply(question)) return reply({ ...(await answerStrategy(question)), strat: true }); // (update 600: strat: no Compare link)
     clearStratAsk();
@@ -803,7 +839,7 @@ function draw() {
   }
   if (!chat.length) {
     // (update 925) the full hello; once you tap into the box it folds to two lines, with "Show full message" to open it again
-    const body = oneData() ? "You can ask me anything about your data. For example, you could ask about your stats over a specific stretch of time, where you rank on tour in a certain category, or how two products compare." : "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare.";
+    const body = onCourse ? `You\u2019re playing${onCourse.course ? ` ${onCourse.course}` : ""}, so I\u2019m your caddie. Tell me your score (\u201cbogey\u201d) or a shot (\u201c7 iron to the green, 20 feet\u201d) and I\u2019ll fill in your card. Ask me for a club, the play on a hole, or what you did here last time. You can also hold the Cal button and talk without opening this.` : oneData() ? "You can ask me anything about your data. For example, you could ask about your stats over a specific stretch of time, where you rank on tour in a certain category, or how two products compare." : "You can ask me anything about the data. For example, you could ask about a player’s stats over a specific stretch of time, who leads the tour in a certain category, or how two products compare.";
     const more = el("button", { type: "button", class: "link small cal-hello-more" }, "Show full message"); more.addEventListener("click", () => { helloOpen = true; draw(); });
     const fold = helloFolded && !helloOpen;
     items.push(el("div", { class: `cal-msg callie cal-hello${fold ? " folded" : ""}` }, fold ? [el("p", { class: "cal-hello-clip" }, `Hi, I’m Cal. ${body} What would you like to know first?`), more]
@@ -866,6 +902,8 @@ function draw() {
   if (!busy && editing < 0) input.focus();
 }
 export async function openCallie() {
+  import("./listen.js").then((m) => m.warmMic()).catch(() => {}); // (update 955: the microphone awake before the first try)
+  import("./caddie.js").catch(() => {}); // (update 956: loaded, and so kept on the phone for the course with no signal)
   if (!panel) {
     const input = el("textarea", { class: "cal-in", rows: 2, placeholder: "Ask Cal…", "aria-label": "Your question" });
     const send = el("button", { type: "button", class: "btn cal-send", "aria-label": "Send" }, "Ask");
@@ -876,7 +914,7 @@ export async function openCallie() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const listenMod = await import("./listen.js"); // (update 645)
     const PH = "Ask Cal\u2026";
-    let rec = null, listening = false, committed = "";
+    let rec = null, listening = false, committed = "", voiceUsed = false; // (update 956: said, not typed: Cal answers out loud)
     const mic = SR ? el("button", { type: "button", class: "cal-mic", "aria-label": "Ask with your voice", title: "Ask with your voice" }) : null;
     if (mic) mic.innerHTML = '<svg viewBox="0 0 40 40" width="22" height="22"><circle cx="20" cy="20" r="20" fill="#e5252a"/><rect x="15.5" y="7.5" width="9" height="16" rx="4.5" fill="#fff"/><path d="M12 19.5a8 8 0 0 0 16 0" fill="none" stroke="#fff" stroke-width="2"/><line x1="20" y1="27.5" x2="20" y2="31.5" stroke="#fff" stroke-width="2"/><line x1="15.5" y1="32" x2="24.5" y2="32" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
     // (update 645) the shared listener (listen.js): a session the browser ends is started again at once, and words not yet
@@ -891,16 +929,16 @@ export async function openCallie() {
     const startSession = () => {
       const { listener } = listenMod;
       L = listener({
-        onText: (t) => { if (!listening) return; input.value = t; input.scrollTop = input.scrollHeight; },
+        onText: (t) => { if (!listening) return; input.value = t; input.scrollTop = input.scrollHeight; if (t) voiceUsed = true; },
         onBlocked: () => { stopListening(); input.placeholder = "Microphone blocked: allow it for this site in the browser\u2019s settings"; },
         // (update 646) iPhone: a pause ends the listening (a restart wouldn't hear): what you said stays, ready to send
-        onPause: (t) => { if (!listening) return; listening = false; L = null; if (t) { input.value = t; committed = t; } else setTimeout(() => { if (!input.value.trim()) input.placeholder = `Nothing heard (${listenMod.whyNothing()})`; }, 0);
+        onPause: (t) => { if (!listening) return; listening = false; L = null; if (t) { input.value = t; committed = t; voiceUsed = true; } else setTimeout(() => { if (!input.value.trim()) input.placeholder = `Nothing heard (${listenMod.whyNothing()})`; }, 0);
           mic?.classList.remove("on"); mic?.setAttribute("aria-pressed", "false"); panel?.querySelector(".cal-foot")?.classList.remove("rec");
           input.placeholder = PH; if (t) input.setAttribute("data-hint", "Tap Ask to send, or the mic to say more"); },
       });
       L.start(committed);
     };
-    const go = async () => { if (listening) { listening = false; const l = L; L = null; stopListening(); if (l) { const t2 = await l.stop(); if (t2) input.value = t2; } } const t = input.value.trim(); if (!t || busy) return; input.value = ""; committed = ""; ask(t); };
+    const go = async () => { if (listening) { listening = false; const l = L; L = null; stopListening(); if (l) { const t2 = await l.stop(); if (t2) input.value = t2; } } const t = input.value.trim(); if (!t || busy) return; input.value = ""; committed = ""; const v = voiceUsed; voiceUsed = false; ask(t, { voice: v }); };
     send.addEventListener("click", go);
     const foldHello = () => { if (!helloFolded && !chat.length) { helloFolded = true; helloOpen = false; draw(); } }; input.addEventListener("pointerdown", foldHello); input.addEventListener("keydown", foldHello); /* (update 925: tapping in, or typing, folds the hello; the box's own focus on opening doesn't) */
     if (matchMedia("(max-width: 640px)").matches) { input.rows = 1; const grow = () => { input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight + 2, 96)}px`; }; input.addEventListener("input", grow); } /* (update 924) */
@@ -937,6 +975,8 @@ export async function openCallie() {
   const seen = await playersYouCanSee();
   exList = examples(seen, seen.length > 1 ? await tourLeader() : null);
   draw();
+  // (update 957) on the course: Cal says it's your caddie, with caddie examples
+  currentRound().then((rr) => { onCourse = rr?.cur || null; if (onCourse) { exList = ["I made a 5", "What club from 150?", "How did I play this hole last time?", "Read me my card"]; draw(); } }).catch(() => {});
 }
 /* (update 644) a shot said to Cal ("I just hit a 5 iron to the green with 25 ft left"): added to your round in progress,
    as the next shot on the hole you're on. The round page does the adding (the same as its own Voice input). */
@@ -988,13 +1028,21 @@ async function roundAnswer(q) {
 /** (update 644) hold the header's Cal: what was said, asked (or a shot, added) without opening Cal first */
 export async function askHeld(text) {
   const t = String(text || "").trim(); if (!t) return;
+  // (update 956) the caddie: a score, a shot, a hole change … saved straight into the round, a small pop-up saying what was done
+  // (and said out loud), without opening Cal; anything else Cal answers opens Cal, also said out loud
+  { const cd = await caddieTry(t);
+    if (cd?.hush) { (await import("./caddie.js")).hush(); return; }
+    if (cd && cd.toast) { const C = await import("./caddie.js"); C.toast(cd.text); C.speak(cd.text); chat.push({ who: "me", text: t }, { who: "callie", text: cd.text, strat: true }); return; }
+    if (cd) { await openCallie(); chat.push({ who: "me", text: t });
+      if (cd.delegate === "strategy") { const res = await answerStrategy(cd.q).catch(() => ({ text: "I couldn\u2019t work out the strategy for that hole just now." })); chat.push({ who: "callie", q: t, ...res, strat: true }); draw(); say(res.text); return; }
+      const { toast: _t, asking: _a, ...m } = cd; void _t; void _a; chat.push({ who: "callie", q: t, ...m, strat: true }); draw(); say(cd.text); return; } }
   const ra = await roundAnswer(t).catch(() => null); // (update 685)
   if (ra?.auto && ra.href) { goShot(ra.href); return; }
   const shot = ra ? null : await shotFromTalk(t).catch((err) => { console.error(err); return null; });
   if (shot?.href) { goShot(shot.href); return; }
-  await openCallie();
+  await openCallie(); askVoice = true;
   if (ra || shot) { const { auto, href, ...m } = ra || shot; void auto; void href; chat.push({ who: "me", text: t }, { who: "callie", ...m, strat: true }); draw(); return; }
-  ask(t);
+  ask(t, { voice: true });
 }
 function goShot(href) {
   closeCallie();
@@ -1036,6 +1084,20 @@ async function guideAnswer(q) {
   const [a, ...rest] = open, line = (f) => `${String(f.where).endsWith(f.name) ? `**${f.where}**` : `**${f.name}** on **${f.where}**`}${f.what ? `: ${f.what}` : ""}`;
   const text = [`The best place for that: ${line(a)}.`, rest.length ? `Also worth a look: ${rest.map(line).join("; ")}.` : "", "Let me know if that’s not what you’re looking for and I’ll find something closer."].filter(Boolean).join("\n\n");
   return { text, guide: open.map((f) => ({ label: `Open ${f.name} →`, href: hrefOf(f), view: f.view || null, sel: f.sel || null, head: f.head || f.name })) };
+}
+// (update 955) what a "start a round" request says about the round: the course (after "at" / "on"), the tees, the day,
+// 9 holes, and whether to use the saved scorecard
+function roundPrefill(q) {
+  const t = String(q || "").replace(/[.!?]+\s*$/, ""), out = {};
+  const tail = "(?=\\s+(?:using|with|from|off|on|playing|today|yesterday|this|tomorrow|the\\s+\\w+\\s+tees|\\w+\\s+tees|tees|for\\s+9|9\\s+holes|nine|18|and)\\b|,|$)";
+  const CRS = (pre) => t.match(new RegExp(`\\b${pre}\\s+(?:the\\s+)?([a-z0-9'&.\\- ]+?)${tail}`, "i")), m = CRS("at") || CRS("on");
+  if (m && !/^(the\s+)?(\d+|nine|9|18|today|yesterday|my|a|an)\b/i.test(m[1].trim())) out.course = m[1].trim();
+  const tm = t.match(/\b(?:from|off|play(?:ing)?)?\s*(?:the\s+)?([a-z]+(?:\s[a-z]+)?)\s+tees\b/i); if (tm && !/^(the|my|saved)$/i.test(tm[1])) out.tees = tm[1].replace(/^(the|from|off)\s+/i, "").trim();
+  const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  if (/\byesterday\b/i.test(t)) { const d = new Date(); d.setDate(d.getDate() - 1); out.date = iso(d); } else if (/\btoday\b/i.test(t)) out.date = iso(new Date());
+  if (/\b(9|nine)\s*(-\s*)?holes?\b|\bfront nine\b|\bback nine\b/i.test(t)) out.holes = 9;
+  if (/\bsaved\b|\bmy (score)?card\b/i.test(t)) out.saved = true;
+  return Object.keys(out).length ? out : null;
 }
 function navAnswer(q) {
   const t = String(q || "").trim(), words = t.split(/\s+/).length;

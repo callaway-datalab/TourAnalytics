@@ -22,6 +22,18 @@ export function whyNothing() {
   if (!diag.speech && !diag.sound) return "no sound reached it";
   return "it heard sound but no words";
 }
+// (update 955) the first try or two after the page opens often heard nothing on iPhone: the microphone wasn't awake yet. When
+// Cal opens and the site may already use the microphone (never asking for it here), it's opened for a moment and closed, so
+// the first hold or tap hears. And each try that heard nothing goes in the Performance log, with why, to see what's left.
+let warmed = false;
+export async function warmMic() {
+  if (warmed || !isIOS() || !navigator.mediaDevices?.getUserMedia) return;
+  try { const p = await navigator.permissions?.query?.({ name: "microphone" }); if (p && p.state !== "granted") return; if (!p) return; } catch { return; }
+  warmed = true;
+  try { const st = await navigator.mediaDevices.getUserMedia({ audio: true }); setTimeout(() => st.getTracks().forEach((t) => t.stop()), 150); } catch { warmed = false; }
+}
+const logMiss = (ms) => import("./perf.js").then((m) => m.bootLog(`voice: heard nothing after ${ms} ms (${whyNothing()})`)).catch(() => {});
+let startedAt = 0;
 function rec() {
   if (R) return R;
   // (update 684) each recogniser answers only while it's the current one: an old one being dropped (aborted) used to
@@ -33,7 +45,7 @@ function rec() {
   me.onaudiostart = () => { if (cur()) mark("audio"); }; me.onsoundstart = () => { if (cur()) mark("sound"); }; me.onspeechstart = () => { if (cur()) mark("speech"); };
   me.onresult = (e) => { if (!cur()) return; count = e.results.length; lastEvt = Date.now(); owner?._result(e); };
   me.onerror = (e) => { if (!cur()) return; mark("error", e.error || "unknown"); owner?._error(e); };
-  me.onend = () => { if (!cur()) return; mark("ended"); running = false; stopping = false; count = 0; skip = 0; const o = owner; o?._end(); };
+  me.onend = () => { if (!cur()) return; if (!diag.speech && startedAt) logMiss(Date.now() - startedAt); mark("ended"); running = false; stopping = false; count = 0; skip = 0; const o = owner; o?._end(); };
   return me;
 }
 
@@ -85,6 +97,7 @@ export function listener({ onText = () => {}, onBlocked = () => {}, onPause = ()
     if (running || stopping) { const old = R; R = null; running = false; stopping = false; try { old?.abort(); } catch { /* */ } r = rec(); } // (update 684: dropped quietly)
     Object.assign(diag, { asked: 1, started: 0, audio: 0, sound: 0, speech: 0, error: "", ended: 0 }); lastEvt = Date.now();
     skip = 0; running = true; // (counted as running from the call: a tap's stop must reach it even before it has begun)
+    startedAt = Date.now();
     try { r.start(); } catch (err) { running = false; throw err; }
   };
   return self;

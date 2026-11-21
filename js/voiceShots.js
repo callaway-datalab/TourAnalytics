@@ -210,3 +210,6 @@ export function parseShots(text, { bag = [] } = {}) {
   if (!shotsOut.length) notes.push("Couldn't make out any shots. Try something like: \u201cDriver to the fairway, 150 left, 8 iron on the green 20 feet, two putts.\u201d");
   return { shots: shotsOut, notes };
 }
+
+// (update 956) for Cal the caddie: a club said in a question ("how far do I hit my 7 iron")
+export { clubIn };

@@ -1599,3 +1599,29 @@ html[data-theme="light"] .fin-t25 { color: #6b8f12 !important; }
 html[data-theme="light"] .fin-t50 { color: #a67c00 !important; }
 html[data-theme="light"] .fin-low { color: #c25e00 !important; }
 html[data-theme="light"] .fin-cut { color: #c4261d !important; }
+/* (update 955) Cal's chat: room round the edges. The typing box's text off its rounded ends (it sat on the edge on iPhone),
+   the box and buttons off the panel's edge, and the messages off the sides */
+.cal-foot textarea.cal-in, .cal textarea.cal-in { padding: 0.6rem 1.1rem !important; border-radius: 1.4rem !important; box-sizing: border-box !important; text-indent: 0 !important; }
+.cal-foot { padding: 10px 12px 12px !important; gap: 8px !important; }
+.cal-log { padding-left: 12px !important; padding-right: 12px !important; }
+.cal-head { padding-left: 12px !important; padding-right: 12px !important; }
+@media (max-width: 640px) { .cal-foot { padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) !important; } .cal-foot textarea.cal-in { padding: 0.55rem 1rem !important; } }
+/* (update 956) Cal the caddie: what was just saved to the round, a small note at the bottom that fades after a few seconds */
+.cal-toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 100000; max-width: min(92vw, 520px); padding: 10px 16px; border-radius: 14px;
+  background: rgba(22,22,24,0.97); color: #f5f5f7; border: 1px solid rgba(212,180,131,0.55); box-shadow: 0 10px 30px rgba(0,0,0,0.5); font-size: 0.92rem; line-height: 1.4; animation: calToastIn .2s ease-out; cursor: pointer; }
+.cal-toast b { color: var(--gold, #d4b483); }
+.cal-toast.out { opacity: 0; transition: opacity .35s; }
+@keyframes calToastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (min-width: 900px) { .cal-toast { bottom: 28px; } }
+html[data-theme="light"] .cal-toast { background: rgba(255,255,255,0.98); color: #111; border-color: rgba(128,94,42,0.5); }
+html[data-theme="light"] .cal-toast b { color: #7a5a22; }
+/* (update 957) Cal the caddie, found where you'd use it: a tip card on a round, a line on the new-round form */
+.cal-tip { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(212,180,131,0.45); background: rgba(212,180,131,0.08); font-size: 0.86rem; line-height: 1.4; }
+.cal-tip-txt { flex: 1; min-width: 0; } .cal-tip-txt b { color: var(--gold, #d4b483); }
+.cal-tip-act { display: flex; align-items: center; gap: 6px; flex: none; }
+.cal-tip-x { background: none; border: 0; color: var(--muted, #8e8e93); font-size: 1rem; padding: 4px 6px; cursor: pointer; }
+.cal-tip-go { padding: 5px 12px !important; font-size: 0.8rem !important; }
+.cal-tip-line { margin: 8px 0 4px; font-size: 0.84rem; color: var(--muted, #8e8e93); text-align: center; } .cal-tip-line b { color: var(--gold, #d4b483); }
+html[data-theme="light"] .cal-tip { background: rgba(128,94,42,0.06); border-color: rgba(128,94,42,0.35); }
+html[data-theme="light"] .cal-tip-txt b, html[data-theme="light"] .cal-tip-line b { color: #7a5a22; }
+@media (max-width: 640px) { .cal-tip { flex-direction: column; gap: 6px; } .cal-tip-act { align-self: flex-end; } }

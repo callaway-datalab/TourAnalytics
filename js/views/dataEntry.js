@@ -35,6 +35,34 @@ export async function render(main, { params, routeId, flash, previewClient }) {
 /* ================================== whose rounds ================================== */
 // Rounds are always the signed-in person's own: a player's, a coach's, an analyst's, or the admin's.
 // Players and team members use their own key; the admin (who has no player key) gets "a_<uid>".
+/* (update 957) Letting people find Cal the caddie where they'd use it, a little at a time:
+   - the new-round form: "next time, just tell Cal" (the first 5 times)
+   - a round on screen: a tip card (the first 5 rounds, or until closed), with Try it
+   - entering holes by hand: after 3 holes, once ever (and never once Cal has saved anything), a nudge to just say it */
+const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || "null"); return v ?? d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
+const calUsed = () => !!lsGet("ta.calUsed", false);
+const openCal = () => import("../callie.js").then((m) => m.openCallie()).catch(() => {});
+function calNewHint() {
+  const n = lsGet("ta.calNewHint", 0); if (n >= 5 || calUsed()) return null; lsSet("ta.calNewHint", n + 1);
+  return el("p", { class: "cal-tip-line" }, [el("span", { "aria-hidden": "true" }, "\uD83C\uDF99\uFE0F "), "Next time, just tell Cal: hold the ", el("b", {}, "Cal"), " button and say \u201cstart a round at\u201d and the course."]);
+}
+function calTipCard(roundId) {
+  const T = lsGet("ta.calTip", { off: false, seen: [] }); if (T.off) return null;
+  if (!T.seen.includes(roundId)) { if (T.seen.length >= 5) return null; T.seen.push(roundId); lsSet("ta.calTip", T); }
+  const x = el("button", { type: "button", class: "cal-tip-x", "aria-label": "Don\u2019t show this again" }, "\u2715");
+  const tryIt = el("button", { type: "button", class: "btn small cal-tip-go" }, "Try it");
+  const card = el("div", { class: "cal-tip" }, [el("div", { class: "cal-tip-txt" }, [el("b", {}, "Talk instead of tapping. "), "Hold the Cal button and say \u201cbogey\u201d, \u201c7 iron to the green, 20 feet\u201d or \u201cwhat club from 150?\u201d. Your card fills in as you go, and Cal answers out loud."]), el("div", { class: "cal-tip-act" }, [tryIt, x])]);
+  x.addEventListener("click", () => { lsSet("ta.calTip", { ...lsGet("ta.calTip", { seen: [] }), off: true }); card.remove(); });
+  tryIt.addEventListener("click", openCal);
+  return card;
+}
+let handSaves = 0;
+function calNudge() {
+  if (++handSaves !== 3 || calUsed() || lsGet("ta.calNudged", false)) return;
+  lsSet("ta.calNudged", true);
+  import("../caddie.js").then((m) => m.toast("Tip: you can just say it. Hold the **Cal** button and say \u201cpar\u201d or \u201cdriver to the fairway, 150 left\u201d, and Cal fills in the hole.", 9000)).catch(() => {});
+}
 export function myEntryKey(state = getState()) {
   return state.isAdmin && !state.profile?.clientKey ? `a_${state.user.uid}` : state.profile?.clientKey;
 }
@@ -397,10 +425,7 @@ async function renderNew(main, flash, viewing = null) {
     holes: Array.from({ length: c.holes || 18 }, (_, i) => ({ n: i + 1, par: c.par?.[i] ?? 4, hcp: c.hcp?.[i] ?? null, yards: (c.tees?.[c.lastTees] || [])[i] ?? null })) }));
   const seen = new Set(fromCards.map((c) => c.name.trim().toLowerCase()));
   const courseHist = [...fromCards, ...courseHistory(pastRounds).filter((c) => !seen.has(c.name.trim().toLowerCase()))];
-  const courseBox = courseCombobox(course, {
-    history: courseHist, // (update 270: the same list, so a deleted card leaves the suggestions at once)
-    tour: tourCourses,
-    onPick: (c) => {
+  const pickCourse = (c) => {
       if (c.location) locationIn.value = c.location;
       if (c.tees && !teesIn.value) teesIn.value = c.tees;
       if (c.holes?.length) {
@@ -417,8 +442,31 @@ async function renderNew(main, flash, viewing = null) {
           : `Scorecard filled from your round here on ${c.date}. Check it's the same tees.`;
         lastSavedKey = cardKey(); // (nothing new to save yet)
       }
-    },
+  };
+  const courseBox = courseCombobox(course, {
+    history: courseHist, // (update 270: the same list, so a deleted card leaves the suggestions at once)
+    tour: tourCourses,
+    onPick: pickCourse,
   });
+  // (update 955) a round Cal was asked to start ("start a round at Torrey Pines North using my saved scorecard, blue tees"):
+  // the course found among the saved scorecards (first), the courses of past rounds and the tour's, and picked as a tap on it
+  // would; then the tees, the date and 9 or 18 holes from what was said. What isn't found is left to fill in, and said.
+  { let pf = null; try { pf = JSON.parse(sessionStorage.getItem("cal.round") || "null"); sessionStorage.removeItem("cal.round"); } catch { /* */ }
+    if (pf && Date.now() - (pf.at || 0) < 120000) {
+      const GEN = new Set(["golf", "course", "club", "gc", "cc", "country", "the", "links", "resort", "and", "at", "of"]);
+      const toks = (x) => String(x || "").toLowerCase().replace(/&/g, " ").replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w && !GEN.has(w));
+      const want = toks(pf.course), said = [];
+      const score = (c) => { const have = new Set(toks(c.name)); const hit = want.filter((w) => have.has(w)).length; return hit === want.length ? 10 + (c.saved && !c.tourCard ? 2 : 0) - have.size * 0.01 : hit / Math.max(1, want.length); };
+      const pool = pf.saved ? [...fromCards, ...courseHist, ...tourCourses] : [...courseHist, ...tourCourses];
+      const best = want.length ? pool.map((c) => ({ c, s: score(c) })).sort((a, b) => b.s - a.s)[0] : null;
+      if (best && best.s >= 10) { course.value = best.c.name; pickCourse(best.c); said.push(`the course (${best.c.name}${best.c.saved && !best.c.tourCard ? ", from your saved scorecard" : best.c.tourCard ? ", from the tour's card" : ""})`); }
+      else if (pf.course) { course.value = pf.course.replace(/\b\w/g, (m) => m.toUpperCase()); said.push(`the course name (no saved scorecard matched \u201c${pf.course}\u201d${pf.saved ? "" : ""}: pick it from the list to fill the card)`); }
+      if (pf.tees) { const tw = String(pf.tees).toLowerCase(), i = cardTees.findIndex((t) => t.name.toLowerCase().includes(tw));
+        if (i >= 0) { teeSelect.value = String(i); applyTee(i); drawTeeSelect(); said.push(`the ${cardTees[i].name} tees`); } else { teesIn.value = pf.tees.replace(/^\w/, (m) => m.toUpperCase()); said.push("the tees"); } }
+      if (pf.date) { date.value = pf.date; said.push("the date"); }
+      if (pf.holes === 9 && holesCount !== 9) { holesCount = 9; holes = blankHoles(9).map((h, i) => ({ ...h, ...(holes[i] || {}), n: i + 1 })); drawCount(); drawGrid(); said.push("9 holes"); }
+      if (said.length) photoStatus.textContent = `Cal filled in ${said.join(", ")}. ${photoStatus.textContent || "Check it before you start."}`;
+    } }
 
   // (update 270) Your saved scorecards, to delete any you don't want (a course you won't play again, one entered wrong)
   const savedBox = el("div", { class: "rd-saved" });
@@ -676,6 +724,7 @@ async function renderNew(main, flash, viewing = null) {
       grid,
       el("div", { class: "sc-foot" }, [el("p", { class: "sc-hint" }, ["Par is 4 unless you change it with \u25B2 \u25BC. ", savedNote]), totals]),
     ]),
+    calNewHint(), // (update 957)
     el("div", { class: "entry-bar" }, start),
   ]);
   mount(main, [el("p", { class: "crumb" }, el("a", { href: "#/entry" }, "\u2190 Enter New Round")), form]);
@@ -693,7 +742,10 @@ function renderRound(main, params, flash, previewClient) {
   let strokes = [];           // the hole on screen, being edited
   let saveTimer = null;
   let firstLoad = true;
-  const calTok = {}; window.__calShotPage = calTok; // (update 644: only the round page on screen takes a shot from Cal)
+  const calTok = {}; window.__calShotPage = calTok;
+  // (update 957) Cal the caddie saving into this round while it's on screen: anything typed here is saved first (so it can't
+  // overwrite what Cal saves), then the page shows the hole Cal changed (the save comes back from the database and redraws it)
+  window.__calRoundPage = { tok: calTok, id: roundId, flush: async () => { await flushSave(); if (quickTimer) { clearTimeout(quickTimer); await quickFlush?.(); } }, show: (n) => { if (!round || window.__calShotPage !== calTok) return; const i = round.holes.findIndex((h) => h.n === n); if (i >= 0 && i !== holeIdx) go(i); } }; // (update 644: only the round page on screen takes a shot from Cal)
   const status = el("span", { class: "save-status", role: "status" });
 
   // Whoever entered per round can change or delete it. The admin can too, but only from inside that
@@ -717,6 +769,7 @@ function renderRound(main, params, flash, previewClient) {
   const hole = () => round.holes[holeIdx];
   const key = (h) => `h${h.n}`;
 
+  let lastQuick = null;
   const unsub = watchRound(playerKey, roundId, (r) => {
     if (!r) { mount(main, el("p", { class: "empty center" }, "That round isn't available.")); return; }
     const editingNow = saveTimer !== null;
@@ -734,8 +787,9 @@ function renderRound(main, params, flash, previewClient) {
       // contents, not the text. Our own save (or anything while you're typing in this hole) only
       // refreshes the score and the hole strip, never the shots on screen.
       if (holeIdx < 0) { draw(); return; }
-      const typing = editingNow || holeBox.contains(document.activeElement);
-      if (typing || sameShots(r.shots?.[key(hole())], cleanStrokes())) { drawStrip(); updateScore(); return; }
+      const typing = editingNow || (holeBox.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")); // (update 957: a button tapped last isn't typing)
+      const qNow = JSON.stringify(r.quick?.[key(hole())] || null), qChanged = qNow !== lastQuick; lastQuick = qNow; // (update 957: a score Cal saved)
+      if (typing || (sameShots(r.shots?.[key(hole())], cleanStrokes()) && !qChanged)) { drawStrip(); updateScore(); return; }
       // Someone else (another device) really changed this hole: update it in place, keeping open shots
       // open and the page where it is.
       const wasOpen = strokes.map((x) => x.open);
@@ -837,6 +891,7 @@ function renderRound(main, params, flash, previewClient) {
     const clean = cleanStrokes();
     // With no signal the save is kept on this phone and sent when the signal is back; the screen carries on.
     const write = saveHole(playerKey, roundId, h.n, clean);
+    if (clean.some((x) => x.endLie === "Holed")) calNudge(); // (update 957: a hole finished by hand)
     await settle(write);
   }
   const OFFLINE_MSG = "Saved on this phone \u00b7 will sync";
@@ -885,7 +940,7 @@ function renderRound(main, params, flash, previewClient) {
       canEdit() ? null : el("p", { class: "muted small" }, `Entered by ${round.ownerName || "someone else"} \u2014 view only.`),
     ]);
     if (holeIdx < 0) { mount(main, [head, summary()]); return; }
-    mount(main, [head, strip, holeBox, bar]);
+    mount(main, [head, canEdit() && round.status !== "complete" ? calTipCard(roundId) : null, strip, holeBox, bar]); // (update 957: the caddie tip)
     drawStrip(); drawHole(); drawBar();
   }
 
@@ -916,8 +971,8 @@ function renderRound(main, params, flash, previewClient) {
   // was, and the box you were typing in keeps focus.
   /* ---------------- Quick mode: score, putts, fairway, green in regulation ---------------- */
   const detailHoles = new Set(); // holes you've opened up for full shot detail
-  const quickNow = () => round?.mode === "quick" && !detailHoles.has(hole().n) && !(round.shots?.[key(hole())] || []).length;
-  let quickTimer = null;
+  const quickNow = () => (round?.mode === "quick" || Number(round?.quick?.[key(hole())]?.score) > 0) && !detailHoles.has(hole().n) && !(round.shots?.[key(hole())] || []).filter((s) => s && (s.endLie || s.club)).length; // (update 957: or a score Cal saved, with no shots there)
+  let quickTimer = null, quickFlush = null; // (update 957: Cal saves what's waiting first)
   function quickBox() {
     const h = hole(), ro = !canEdit();
     const q = { score: "", putts: "", fwy: null, gir: null, ...(round.quick?.[key(h)] || {}) };
@@ -928,7 +983,8 @@ function renderRound(main, params, flash, previewClient) {
       if (ro) return;
       status.textContent = "Saving\u2026";
       clearTimeout(quickTimer);
-      quickTimer = setTimeout(() => { quickTimer = null; settle(saveQuickHole(playerKey, roundId, h.n, { score: q.score === "" ? null : Number(q.score), putts: q.putts === "" ? null : Number(q.putts), fwy: q.fwy, gir: q.gir })); }, 400);
+      quickFlush = () => { quickTimer = null; quickFlush = null; if (q.score !== "") calNudge(); return settle(saveQuickHole(playerKey, roundId, h.n, { score: q.score === "" ? null : Number(q.score), putts: q.putts === "" ? null : Number(q.putts), fwy: q.fwy, gir: q.gir })); };
+      quickTimer = setTimeout(() => quickFlush?.(), 400);
     };
     const stepper = (label, field, min, max, start) => {
       const val = el("span", { class: "qk-val" }, q[field] === "" || q[field] == null ? "\u2013" : String(q[field]));
