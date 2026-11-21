@@ -37,7 +37,9 @@ export async function fill(box, kind, me, { st }) {
       if (sub === "week") await (await import("./views/practiceWeek.js")).render(inner, { previewClient: pv, key: me.key, label: name });
       else if (sub === "practice") await (await import("./views/practiceSimple.js")).render(inner, { previewClient: pv, flash });
       else { const st0 = window.__authState || {}; if (st0.isAdmin && !pv) await (await import("./views/adminGoals.js")).render(inner, { flash }); else await (await import("./views/goals.js")).render(inner, { previewClient: pv, flash }); }
-    } catch (e) { console.error(e); mount(inner, el("p", { class: "muted center" }, "Couldn’t open this just now.")); }
+    } catch (e) { console.error(e); const why = String(e?.message || e || "unknown").slice(0, 160); import("./perf.js").then((p) => p.bootLog(`practice ${sub} failed: ${why}`)).catch(() => {}); // (update 962: why, and Try again)
+      const again = el("button", { type: "button", class: "btn small" }, "Try again"); again.addEventListener("click", () => (/dynamically imported module|module script failed|Load failed|Failed to fetch|NetworkError/i.test(why) ? location.reload() : show(sub)));
+      mount(inner, el("div", { class: "center" }, [el("p", { class: "muted" }, "Couldn\u2019t open this just now."), again, el("p", { class: "muted small" }, `(${why})`)])); }
   };
   mount(box, [el("div", { class: "ip ip-embed st-pg-top" }, pills), body]);
   await show(PARTS.some(([v]) => v === st.pgSub) ? st.pgSub : "week");

@@ -27,7 +27,18 @@ function statsTab(kind, me, st, opts) {
   if (tabMemo.has(k)) return tabMemo.get(k);
   const box = el("div", { class: "st-tab" }, el("p", { class: "muted center" }, "Loading…"));
   if (tabMemo.size > 6) tabMemo.delete(tabMemo.keys().next().value); tabMemo.set(k, box);
-  import("./statsTabs.js").then((m) => m.fill(box, kind, me, { sub, st, previewClient: opts.previewClient || null, redraw: () => { tabMemo.delete(k); opts.redraw?.(); } })).catch((e) => { console.error(e); mount(box, el("p", { class: "muted center" }, "Couldn’t open this just now.")); });
+  // (update 962) a tab that fails isn't kept (it stayed broken for the rest of the visit): it says why, with Try again, and
+  // the reason goes in the Performance log
+  const run = () => import("./statsTabs.js").then((m) => m.fill(box, kind, me, { sub, st, previewClient: opts.previewClient || null, redraw: () => { tabMemo.delete(k); opts.redraw?.(); } })).catch((e) => {
+    console.error(e); tabMemo.delete(k);
+    const why = String(e?.message || e || "unknown").slice(0, 160);
+    import("./perf.js").then((p) => p.bootLog(`tab ${kind} failed: ${why}`)).catch(() => {});
+    const again = el("button", { type: "button", class: "btn small" }, "Try again");
+    // (a file that failed to load stays failed in the browser until the app reloads: then Try again reloads it)
+    const fileFail = /dynamically imported module|module script failed|Load failed|Failed to fetch|NetworkError/i.test(why);
+    again.addEventListener("click", () => { if (fileFail) { location.reload(); return; } mount(box, el("p", { class: "muted center" }, "Loading\u2026")); tabMemo.set(k, box); run(); });
+    mount(box, el("div", { class: "center st-tab-err" }, [el("p", { class: "muted" }, fileFail ? "Couldn\u2019t load this page (the connection dropped, or the site was mid-update)." : "Couldn\u2019t open this just now."), again, el("p", { class: "muted small" }, `(${why})`)])); });
+  run();
   return box;
 }
 export function sgDashboard(container, opts) {
