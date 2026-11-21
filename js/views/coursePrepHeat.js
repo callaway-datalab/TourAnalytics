@@ -289,9 +289,9 @@ export async function drawHeat(ctx, course) {
     }));
   }
   function drawLegend() {
-    const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => { const v = t - 0.5; return [t, scoreT(v, par)]; });
+    const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => { const v = t < 0.5 ? (t - 0.5) * (par >= 5 ? 2 : 1) : t - 0.5; return [t, scoreT(v, par)]; });
     const bar = el("i", { class: "sh-grad" }); bar.style.background = `linear-gradient(90deg, ${stops.map(([t]) => `rgb(${rgbAt(t)}) ${t * 100}%`).join(", ")})`;
-    mount(legend, [el("span", { class: "sh-lg" }, ["Birdie", bar, "Bogey"]), el("span", { class: "muted small" }, `${kOf(st.hole, par) ? `Where shot ${kOf(st.hole, par)} finished. ` : ""}White is par (${par}); full blue ${par - 0.5} or better, full red ${par + 0.5} or worse: the hole score from there${kOf(st.hole, par) ? "" : ", reached in regulation"}. ${Z?.hasN ? "Fainter: fewer shots from there." : ""}`)]);
+    mount(legend, [el("span", { class: "sh-lg" }, [par >= 5 ? "Eagle" : "Birdie", bar, "Bogey"]), el("span", { class: "muted small" }, `${kOf(st.hole, par) ? `Where shot ${kOf(st.hole, par)} finished. ` : ""}White is par (${par}); full blue ${par >= 5 ? `${par - 1} (eagle)` : `${par - 0.5}`} or better, full red ${par + 0.5} or worse. Blue leans toward ${par >= 5 ? "eagle" : "birdie"}, red toward bogey: the hole score from there${kOf(st.hole, par) ? "" : ", reached in regulation"}. ${Z?.hasN ? "Fainter: fewer shots from there." : ""}`)]);
   }
   const lieList = (z) => { const m = new Map(); for (const r of z.rows) m.set(r.lie || "Any lie", (m.get(r.lie || "Any lie") || 0) + (r.n || 1)); return [...m].sort((a, b) => b[1] - a[1]).map(([l]) => l).slice(0, 2).join(" / "); };
   // tap: the zone under the finger
