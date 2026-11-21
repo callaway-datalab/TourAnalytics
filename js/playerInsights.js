@@ -154,19 +154,28 @@ export const evName = (e) => String(e || "").replace(/\s+\d{4}$/, "").trim();
 
 /** every tournament on a tour: { name, yrs, n (player-weeks), perYr, small, sd {cat}, room {cat: × usual, shrunk} } */
 const SHRINK = 60; // player-weeks at which a tournament's own spread counts half (and the tour's usual, half)
-export function eventRoom(field, tour) {
-  const by = new Map(); // event → year|player → rounds
-  for (const p of field) for (const r of p.rounds) { if (tour && r.tour !== tour) continue; const e = evName(r.event); if (!e) continue;
-    const m = by.get(e) || by.set(e, new Map()).get(e), k = `${yrOf(r)}|${p.key}`; (m.get(k) || m.set(k, []).get(k)).push(r); }
+// (update 952) a round's course, loosely ("Pebble Beach Golf Links" and "Pebble Beach GL" one course); a round whose course
+// the file doesn't name stays with its tournament ("ev:" + its name)
+const cKey = (n) => String(n || "").toLowerCase().replace(/&/g, " ").replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w && !["golf", "club", "course", "links", "gl", "gc", "cc", "country", "the", "and", "resort", "g", "c"].includes(w)).join(" ");
+export const courseGroupOf = (r) => (r.course && cKey(r.course) ? cKey(r.course) : `ev:${evName(r.event)}`);
+/** opts.by "course" (update 952): grouped by course (a player's week there: their rounds there in one tournament), each with
+ *  the tournaments held there ({ name, yrs }); otherwise by tournament */
+export function eventRoom(field, tour, { by: byWhat = "event" } = {}) {
+  const byC = byWhat === "course", by = new Map(), meta = new Map(); // group → year|(event|)player → rounds
+  for (const p of field) for (const r of p.rounds) { if (tour && r.tour !== tour) continue; const ev = evName(r.event); if (!ev) continue; const e = byC ? courseGroupOf(r) : ev;
+    const m = by.get(e) || by.set(e, new Map()).get(e), k = byC ? `${yrOf(r)}|${ev}|${p.key}` : `${yrOf(r)}|${p.key}`; (m.get(k) || m.set(k, []).get(k)).push(r);
+    if (byC) { const M = meta.get(e) || meta.set(e, { names: new Map(), evs: new Map() }).get(e); if (r.course) M.names.set(r.course, (M.names.get(r.course) || 0) + 1); (M.evs.get(ev) || M.evs.set(ev, new Set()).get(ev)).add(yrOf(r)); } }
   const evs = [];
-  for (const [name, m] of by) {
+  for (const [name0, m] of by) {
+    const M = meta.get(name0), name = byC ? (M.names.size ? [...M.names].sort((a, b) => b[1] - a[1])[0][0] : name0.slice(3)) : name0;
+    const extra = byC ? { key: name0, noCourse: name0.startsWith("ev:"), events: [...M.evs].map(([n, ys]) => ({ name: n, yrs: [...ys].sort() })).sort((a, b) => b.yrs.length - a.yrs.length || a.name.localeCompare(b.name)) } : {};
     const weeks = [...m].map(([k, rs]) => ({ yr: k.split("|")[0], v: Object.fromEntries(CATS.map((c) => [c, rs.reduce((t, r) => t + inCat(r, c), 0) / rs.length])) }));
     if (weeks.length < 20) continue; // too few on record
     const yrs = [...new Set(weeks.map((w) => w.yr))].sort();
     // the spread within each year (a year's conditions shift everyone alike), pooled over the years
     const sd = Object.fromEntries(CATS.map((c) => { let ss = 0, df = 0; for (const y of yrs) { const xs = weeks.filter((w) => w.yr === y).map((w) => w.v[c]); if (xs.length < 3) continue; const mu = xs.reduce((t, x) => t + x, 0) / xs.length; ss += xs.reduce((t, x) => t + (x - mu) ** 2, 0); df += xs.length - 1; } return [c, df > 0 ? Math.sqrt(ss / df) : null]; }));
     if (CATS.some((c) => sd[c] == null)) continue;
-    evs.push({ name, yrs, n: weeks.length, perYr: weeks.length / yrs.length, sd });
+    evs.push({ name, yrs, n: weeks.length, perYr: weeks.length / yrs.length, sd, ...extra });
   }
   // the tour's usual spread in each part: every tournament's, weighted by its player-weeks
   const usual = Object.fromEntries(CATS.map((c) => { const w = evs.reduce((t, e) => t + e.n, 0); return [c, w ? Math.sqrt(evs.reduce((t, e) => t + e.n * e.sd[c] ** 2, 0) / w) : null]; }));
@@ -180,22 +189,25 @@ export function eventRoom(field, tour) {
 
 /** (update 820) a player's weeks at one tournament, every year in the stats file: { yr, course, rounds, sg (per round), cat {c: per round},
  *  pos (their place in that week's field by strokes gained, ties shared), of (the field in the file), cut (2 rounds or fewer while others played 4) } */
-export function eventHistory(field, key, name, tour) {
-  const weeks = new Map(); // year → [{ key, rs }]
-  for (const p of field) for (const r of p.rounds) { if (tour && r.tour !== tour) continue; if (evName(r.event) !== name) continue;
-    const y = yrOf(r), m = weeks.get(y) || weeks.set(y, new Map()).get(y); (m.get(p.key) || m.set(p.key, []).get(p.key)).push(r); }
+export function eventHistory(field, key, name, tour) { return weeksHistory(field, key, (r) => evName(r.event) === name, tour); }
+/** (update 952) the same at one course (courseGroupOf), each week its tournament (ev) too */
+export function courseHistory(field, key, group, tour) { return weeksHistory(field, key, (r) => courseGroupOf(r) === group, tour); }
+function weeksHistory(field, key, pred, tour) {
+  const weeks = new Map(); // year|event → [{ key, rs }]
+  for (const p of field) for (const r of p.rounds) { if (tour && r.tour !== tour) continue; if (!pred(r)) continue;
+    const y = `${yrOf(r)}|${evName(r.event)}`, m = weeks.get(y) || weeks.set(y, new Map()).get(y); (m.get(p.key) || m.set(p.key, []).get(p.key)).push(r); }
   const out = [];
-  for (const [yr, m] of weeks) { const mine = m.get(key); if (!mine) continue;
+  for (const [yk, m] of weeks) { const mine = m.get(key); if (!mine) continue; const [yr, ev] = yk.split("|");
     const all = [...m].map(([k, rs]) => ({ k, sum: rs.reduce((t, r) => t + tot(r), 0), n: rs.length })), most = Math.max(...all.map((x) => x.n));
     // full weeks first (everyone who played every round), by strokes gained; then the rest
     all.sort((a, b) => (b.n === most) - (a.n === most) || b.sum - a.sum); const i = all.findIndex((x) => x.k === key), me = all[i];
     const pos = me.n === most ? 1 + all.filter((x) => x.n === most && x.sum > me.sum + 1e-9).length : null;
     const tied = me.n === most && all.filter((x) => x.n === most && Math.abs(x.sum - me.sum) < 1e-9).length > 1;
-    out.push({ yr, course: mine.find((r) => r.course)?.course || null, rounds: mine.length, sg: me.sum / mine.length, cat: Object.fromEntries(CATS.map((c) => [c, mine.reduce((t, r) => t + inCat(r, c), 0) / mine.length])),
+    out.push({ yr, ev, course: mine.find((r) => r.course)?.course || null, rounds: mine.length, sg: me.sum / mine.length, cat: Object.fromEntries(CATS.map((c) => [c, mine.reduce((t, r) => t + inCat(r, c), 0) / mine.length])),
       pos, tied, of: all.length, cut: me.n < most && most >= 3, eventLevel: mine.some((r) => r.eventLevel),
       // (update 834) everyone that week by strokes gained per round, for a player with fewer rounds (no official place)
       sgPos: 1 + all.filter((x) => x.sum / x.n > me.sum / me.n + 1e-9).length, sgTied: all.filter((x) => Math.abs(x.sum / x.n - me.sum / me.n) < 1e-9).length > 1 }); }
-  return out.sort((a, b) => b.yr.localeCompare(a.yr));
+  return out.sort((a, b) => b.yr.localeCompare(a.yr) || a.ev.localeCompare(b.ev));
 }
 
 

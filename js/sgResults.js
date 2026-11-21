@@ -17,6 +17,10 @@ const tot = (rd) => (rd.shots || []).reduce((t, s) => t + (s.sg || 0), 0);
 const inCat = (rd, c) => (rd.shots || []).reduce((t, s) => t + (s.cat === c ? s.sg || 0 : 0), 0);
 const avg = (rs, f) => (rs.length ? rs.reduce((t, r) => t + f(r), 0) / rs.length : null);
 const cls = (v) => (v == null ? "" : v > 0.005 ? "pos" : v < -0.005 ? "neg" : "");
+// (update 954) a finish's colour: a win bright green, top 10 green, 11-25 yellow-green, 26-50 yellow, worse than 50 orange,
+// a missed cut (or WD / DQ) red
+export const finCls = (p) => { const u = String(p || "").toUpperCase().trim(); if (/^(CUT|MC|WD|DQ|W\/D)$/.test(u)) return "fin-cut"; const n = Number(u.replace(/^T/, "")); if (!Number.isFinite(n) || n <= 0) return "";
+  return n === 1 ? "fin-win" : n <= 10 ? "fin-t10" : n <= 25 ? "fin-t25" : n <= 50 ? "fin-t50" : "fin-low"; };
 const ord = (n) => `${n}${["th", "st", "nd", "rd"][((n % 100) - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th"}`;
 const LIES = ["tee", "fairway", "rough", "bunker", "green", "water", "other"];
 const cap = (t) => String(t || "").replace(/^./, (c) => c.toUpperCase());
@@ -114,7 +118,7 @@ export function resultsView(S, rounds, field) {
     mount(listBox, [el("div", { class: "tr-lb-wrap" }, el("table", { class: "tr-lb-t tr-evs" }, [el("thead", {}, el("tr", {}, ["Date", "Tournament", "Finish", "To par", "Rounds", "SG per round"].map((h, i) => el("th", { class: i >= 2 ? "num" : "" }, h)))),
       el("tbody", {}, allYr().map((e) => { const o = pos(e), open = e.x ? st.resX?.key === e.key : st.resOpen && st.resKey === e.key, v = e.x ? null : sgRd(e);
         const tr = el("tr", { class: `tr-ev${open ? " on" : ""}`, tabindex: "0", title: open ? "Close" : "Open this tournament" }, [el("td", { class: "muted" }, new Date(`${String(e.rs?.[0]?.date || e.end).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) })),
-          el("td", {}, [open ? "\u25BE " : "\u25B8 ", e.event]), el("td", { class: `num strong ${o?.pos === "1" ? "pos" : /^(CUT|MC|WD|DQ)$/i.test(o?.pos || "") ? "neg" : ""}` }, o?.pos ? (/^\d+$/.test(o.pos) ? ord(Number(o.pos)) : o.pos) : "—"),
+          el("td", {}, [open ? "\u25BE " : "\u25B8 ", e.event]), el("td", { class: `num strong ${finCls(o?.pos)}` }, o?.pos ? (/^\d+$/.test(o.pos) ? ord(Number(o.pos)) : o.pos) : "—"),
           el("td", { class: "num" }, o?.total == null ? "—" : Number(o.total) === 0 ? "E" : Number(o.total) > 0 ? `+${o.total}` : String(o.total).replace("-", "\u2212")),
           el("td", { class: "num" }, e.x ? (e.rounds != null ? String(e.rounds) : "\u2014") : String(new Set(e.rs.map((r) => r.roundNo)).size)), el("td", { class: `num ${cls(v)}`, title: e.x ? "Not in the stats file: scorecards only" : null }, v == null ? "—" : fmtSG(v))]);
         const go = () => { if (e.x) { openX(e); return; } st.resX = null; if (open) { st.resOpen = false; } else { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; } S.draw(); if (!open) toDetail(); };
@@ -147,7 +151,7 @@ export function resultsView(S, rounds, field) {
       return n0; };
     const openEv = (name, year) => { const e = allYr().find((x) => x.year === String(year) && (evMatch(x.event, name) || x.event === name)); if (!e) return null; if (e.x) return () => openX(e); return () => { st.resKey = e.key; st.resOpen = true; st.resRound = null; st.resHole = null; S.draw(); toDetail(); }; };
     const tpS = (v) => (v == null ? "—" : v === 0 ? "E" : v > 0 ? `+${v}` : `−${-v}`);
-    const finTxt = (e) => { const p = fin.get(e.key)?.pos; return p ? (/^\d+$/.test(p) ? ord(Number(p)) : p) : "—"; };
+    const finTxt = (e) => { const p = fin.get(e.key)?.pos; return p ? el("span", { class: `strong ${finCls(p)}` }, /^\d+$/.test(p) ? ord(Number(p)) : p) : "—"; };
     const dTxt = (e) => new Date(`${String(e.end).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(st.resYear === "all" ? { year: "numeric" } : {}) });
     // (update 937) a scorecard tournament (the PGA Tour's own name) as the stats file's tournament in the list: by name, else by
     // its dates; the list's name and date shown everywhere, and one that isn't in the stats file said so

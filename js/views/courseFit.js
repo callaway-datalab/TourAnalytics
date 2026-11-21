@@ -20,7 +20,7 @@ const tot = (r) => (r.shots || []).reduce((t, s) => t + (s.sg || 0), 0);
 const { evName, eventRoom } = PI; // (update 820: shared with Recommended Practice)
 
 export async function fitTab(box, key, name) {
-  mount(box, el("div", { class: "ip ip-embed" }, el("p", { class: "muted ip-wait" }, `Ranking every tournament for ${name}…`)));
+  mount(box, el("div", { class: "ip ip-embed" }, el("p", { class: "muted ip-wait" }, `Ranking every course for ${name}…`)));
   const wrap = box.firstChild, st = window.__authState || {}, last = lastName(name), self = PI.isSelfKey(key); // (update 834: your own: "you", "your")
   const poss = self ? "your" : `${last}\u2019${/s$/i.test(last) ? "" : "s"}`, Poss = self ? "Your" : poss; // (update 838: "Burns’", not "Burns’s")
   const [{ field }, rounds] = await Promise.all([PI.loadField(st).catch(() => ({ field: [] })), PI.loadShots(key, name)]);
@@ -29,11 +29,14 @@ export async function fitTab(box, key, name) {
   const tour = [...new Set(base.map((r) => r.tour).filter(Boolean))].sort((a, b) => base.filter((r) => r.tour === b).length - base.filter((r) => r.tour === a).length)[0] || null;
   const year = [...new Set(base.filter((r) => !tour || r.tour === tour).map(PI.yrOf))].sort().at(-1);
   const P = PI.profile(base, { year, tour, field, key }), season = PI.CATS.reduce((t, c) => t + (P.cat[c] || 0), 0);
-  const { evs: D, mid } = eventRoom(field, tour);
+  // (update 952) by course: each course once (its own field spread, the player's history there, every tournament held there),
+  // the tournaments under it; a tournament whose course the stats file doesn't name stays a row of its own
+  const { evs: D, mid } = eventRoom(field, tour, { by: "course" });
+  const evList = (d) => (d.events || []).map((e) => e.name), evLine = (d) => (d.noCourse ? "" : (d.events || []).map((e) => `${e.name} (${e.yrs.length > 1 ? `${e.yrs[0]}-${e.yrs.at(-1).slice(2)}` : e.yrs[0]})`).join(" \u00b7 "));
   // (update 824) the official results (each year in the stats file) and who's entered in the coming events, when the live feed has them
   const code = PI.tourCodeOf(tour); await Promise.all([PI.ensureFields().catch(() => null), code ? PI.ensureResults(code, [...new Set(D.flatMap((d) => d.yrs))]).catch(() => null) : null]);
   const enteredIn = code ? (PI.fieldEventsSync(name, code) || []) : [], entered = (n) => enteredIn.find((e) => PI.matchEventName(e.name, [n]));
-  if (!D.length) { mount(wrap, el("p", { class: "muted" }, `Not enough of the ${tour || "tour"}'s tournaments in the stats file to rank yet.`)); return; }
+  if (!D.length) { mount(wrap, el("p", { class: "muted" }, `Not enough of the ${tour || "tour"}'s courses in the stats file to rank yet.`)); return; }
   // (update 862) the shot files: a tournament whose course has shot data adds what the player's misses (off the tee, the
   // approach) and blow-ups are worth there; each capped at ±0.75 a round so one course's quirks can't swamp the rest
   let metas = [], prof = null, usual = null, FS = null;
@@ -52,9 +55,9 @@ export async function fitTab(box, key, name) {
     for (const [y, hs] of by) { const u = U.get(y), rest = u ? u.n - hs.length : 0; if (rest < 8) continue; // (their usual that year: 8 or more other rounds)
       yrs.push(y); for (const r of hs) { n++; s += tot(r) - (u.s - hs.reduce((t, q) => t + tot(q), 0)) / rest; for (const c of PI.CATS) cs[c] += inC(r, c) - (u.c[c] - hs.reduce((t, q) => t + inC(q, c), 0)) / rest; } }
     return n ? { n, resid: s / n, cat: Object.fromEntries(PI.CATS.map((c) => [c, cs[c] / n])), yrs: yrs.sort() } : null; };
-  const rows = D.map((d) => { const here = mine.filter((r) => evName(r.event) === d.name);
+  const rows = D.map((d) => { const here = mine.filter((r) => PI.courseGroupOf(r) === d.key);
     const parts = PI.CATS.map((c) => ({ c, room: d.room[c], me: P.cat[c] || 0, edge: (P.cat[c] || 0) * (d.room[c] - 1) }));
-    const eff0 = parts.reduce((t, x) => t + x.edge, 0), sh = shotFor(d.name), eff = eff0 + (sh ? sh.mf.total : 0);
+    const eff0 = parts.reduce((t, x) => t + x.edge, 0), sh = evList(d).map(shotFor).find(Boolean) || null, eff = eff0 + (sh ? sh.mf.total : 0);
     const hist = histOf(here), adj = hist ? (KH * eff + hist.n * hist.resid) / (KH + hist.n) : eff;
     return { ...d, fit: season + adj, eff, adj, hist, eff0, sh, here: here.length, hereSg: here.length ? here.reduce((t, r) => t + tot(r), 0) / here.length : null, parts }; }).sort((a, b) => b.adj - a.adj);
   const xx = (v) => `${v.toFixed(2)}×`, part = (c) => PI.CATN[c].toLowerCase();
@@ -87,23 +90,23 @@ export async function fitTab(box, key, name) {
   const fin = (h, evName) => { const o = code ? PI.officialSync(evName, h.yr, name, code) : null; if (o?.pos) { h.official = true; return PI.posText(o.pos); }
     return h.cut ? "Missed cut" : h.pos == null ? "\u2014" : `\u2248${h.tied ? "T" : ""}${h.pos}`; };
   const sgRk = (h) => (h.sgPos ? `${h.sgTied ? "T" : ""}${h.sgPos} of ${h.of}` : "\u2014");
-  const detail = (r) => { const H = PI.eventHistory(field, key, r.name, tour);
-    const hist = H.length ? el("table", { class: "ip-t cf-hist" }, [el("thead", {}, el("tr", {}, ["Year", "Course", "Finish", "SG rank", H.some((h) => h.eventLevel) ? "Events" : "Rounds", "SG per round", ...PI.CATS.map((c) => ({ OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT" })[c])].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))),
-      el("tbody", {}, H.map((h) => el("tr", {}, [el("td", {}, h.yr), el("td", {}, h.course || "—"), el("td", { class: "num strong" }, fin(h, r.name)), el("td", { class: "num" }, sgRk(h)), el("td", { class: "num" }, String(h.rounds)), el("td", { class: `num strong ${cls(h.sg)}` }, sg2(h.sg)), ...PI.CATS.map((c) => el("td", { class: `num ${cls(h.cat[c])}` }, sg2(h.cat[c])))])))])
+  const detail = (r) => { const H = PI.courseHistory(field, key, r.key, tour);
+    const hist = H.length ? el("table", { class: `ip-t cf-hist${new Set(H.map((h) => h.ev)).size <= 1 ? " cf-one" : ""}` }, [el("thead", {}, el("tr", {}, ["Year", "Tournament", "Finish", "SG rank", H.some((h) => h.eventLevel) ? "Events" : "Rounds", "SG per round", ...PI.CATS.map((c) => ({ OTT: "OTT", APP: "APP", ARG: "ARG", PUTT: "PUTT" })[c])].map((h, i) => el("th", { class: i >= 2 ? "num" : null }, h)))),
+      el("tbody", {}, H.map((h) => el("tr", {}, [el("td", {}, h.yr), el("td", {}, h.ev || "\u2014"), el("td", { class: "num strong" }, fin(h, h.ev)), el("td", { class: "num" }, sgRk(h)), el("td", { class: "num" }, String(h.rounds)), el("td", { class: `num strong ${cls(h.sg)}` }, sg2(h.sg)), ...PI.CATS.map((c) => el("td", { class: `num ${cls(h.cat[c])}` }, sg2(h.cat[c])))])))])
       : el("p", { class: "muted" }, `${self ? "You haven't" : `${last} hasn't`} played it on record.`);
     const shBlock = r.sh ? el("div", { class: "cf-shots" }, [el("p", { class: "cf-sub" }, `From the shot data at ${r.sh.meta.name}`),
       el("p", { class: "muted small" }, `Fit vs a normal week ${sg2(r.eff)}: the parts of the game ${sg2(r.eff0)}, ${poss} misses off the tee ${sg2(r.sh.mf.tee)}, approaches ${sg2(r.sh.mf.app)}, blow-ups ${sg2(r.sh.mf.blow)}.`),
       fitShotsBlock(r.sh.meta, { prof, mf: r.sh.mf, who: last, self })]) : el("p", { class: "muted small cf-noshots" }, "No shot data for this course yet: the fit is from the stats file's parts of the game only.");
     return el("div", { class: "cf-det" }, [el("p", { class: "cf-why" }, why(r)), el("p", { class: "cf-why cf-histwhy" }, [el("b", {}, "Course history: "), histWhy(r)]), shBlock, r.small ? el("p", { class: "cf-small" }, `Small field (about ${Math.round(r.perYr)} players a year in the file, against about ${Math.round(mid)} usually; likely no cut): a rough guide.`) : null,
       el("div", { class: "cf-cols" }, [
-        el("div", {}, [el("p", { class: "cf-sub" }, "What the tournament asks"), el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part", "Impact here", "Normally", "Worth here"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
+        el("div", {}, [el("p", { class: "cf-sub" }, "What the course asks"), el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part", "Impact here", "Normally", "Worth here"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
           el("tbody", {}, r.parts.map((x) => el("tr", {}, [el("td", {}, PI.CATN[x.c]), el("td", { class: "num strong" }, [xx(x.room), el("span", { class: "cf-arrow" }, x.room > 1.03 ? " ▲" : x.room < 0.97 ? " ▼" : "")]), el("td", { class: `num ${cls(x.me)}` }, `${sg2(x.me)} per round`), el("td", { class: `num strong ${cls(x.edge)}` }, sg2(x.edge))])))])]),
-        el("div", {}, [el("p", { class: "cf-sub" }, `${self ? "You" : last} at ${theE(r.name)}`), hist])]),
+        el("div", {}, [el("p", { class: "cf-sub" }, `${self ? "You" : last} at ${r.noCourse ? theE(r.name) : r.name}`), hist])]),
       el("p", { class: "muted small" }, `Impact vs usual: how far the field spread out in each part here (${r.n} player-weeks, ${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]}) against a normal ${tour || "tour"} week, 1.00× being usual. What it's worth here: ${Poss} normal week in that part × (impact − 1). Projected there (with course history): ${sg2(r.fit)} strokes gained per round.${H.length ? " Finish: the official finish where the results are in (≈: their place by strokes gained among those who played every round, until the results are in). SG rank: their rank that week by strokes gained per round, among everyone in the stats file, whatever rounds they played. The parts are strokes gained per round." : ""}`)]); };
   const table = el("div", { class: "ip-tw" }, el("table", { class: "ip-t cf-t" }, [
-    el("thead", {}, el("tr", {}, ["#", "Tournament", "Game fit", "History", "Overall", ""].map((h, i) => el("th", { class: i >= 2 && i <= 4 ? "num" : null, title: ["", "", "How well the parts of the game suit it, against a normal week", "How they've actually played there against their usual those years (rounds there)", "The two together: history counts more the more rounds there", ""][i] || null }, h)))),
+    el("thead", {}, el("tr", {}, ["#", "Course", "Game fit", "History", "Overall", ""].map((h, i) => el("th", { class: i >= 2 && i <= 4 ? "num" : null, title: ["", "", "How well the parts of the game suit it, against a normal week", "How they've actually played there against their usual those years (rounds there)", "The two together: history counts more the more rounds there", ""][i] || null }, h)))),
     el("tbody", {}, rows.flatMap((r, i) => { const open = el("tr", { class: "cf-open", hidden: true }, el("td", { colspan: "6" }, null));
-      const tr = el("tr", { class: "cf-tr", tabindex: "0", role: "button", "aria-expanded": "false" }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, [el("span", { class: "cf-caret", "aria-hidden": "true" }, "▸"), r.name, r.small ? el("span", { class: "cf-tag", title: "Small field: a rough guide" }, "small field") : null, r.sh ? el("span", { class: "cf-tag cf-sh", title: "Includes the shot data: misses and blow-up holes" }, "shot data") : null, (() => { const e = entered(r.name); return e ? el("span", { class: "cf-tag cf-in", title: `${name} is in the field${e.start ? ` (${e.start})` : ""}` }, "✓ entered") : null; })()]),
+      const tr = el("tr", { class: "cf-tr", tabindex: "0", role: "button", "aria-expanded": "false" }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, [el("span", { class: "cf-caret", "aria-hidden": "true" }, "▸"), r.name, evLine(r) ? el("small", { class: "cf-evs" }, evLine(r)) : null, r.small ? el("span", { class: "cf-tag", title: "Small field: a rough guide" }, "small field") : null, r.sh ? el("span", { class: "cf-tag cf-sh", title: "Includes the shot data: misses and blow-up holes" }, "shot data") : null, (() => { const e = evList(r).map(entered).find(Boolean); return e ? el("span", { class: "cf-tag cf-in", title: `${name} is in the field${e.start ? ` (${e.start})` : ""}` }, "✓ entered") : null; })()]),
         el("td", { class: `num ${cls(r.eff)}` }, sg2(r.eff)),
         el("td", { class: `num ${r.hist ? cls(r.hist.resid) : "muted"}` }, r.hist ? [sg2(r.hist.resid), el("small", { class: "cf-rds" }, `${r.hist.n} rds`)] : "—"),
         el("td", { class: `num strong ${cls(r.adj)}` }, sg2(r.adj)),
@@ -127,5 +130,5 @@ export async function fitTab(box, key, name) {
     el("div", { class: "ip-grid2" }, [fold(card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.adj)} per round overall; game fit ${sg2(r.eff)} (${lead(r)}${parts(r)})${hTxt(r)}`]))))),
       fold(card("Toughest fits", "#ff453a", el("ul", { class: "ip-bul" }, worst.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.adj)} per round overall; game fit ${sg2(r.eff)} (${lead(r)}${parts(r)})${hTxt(r)}`])))))]),
     table,
-    samp(`Impact vs usual: strokes gained only exists because players differ, so where the field spreads out more in a part of the game there's more for a good player to gain, and where everyone does about the same (easy greens, short putts) there's less. For each tournament and part: the spread of that week's field (every year in the stats file) against a normal ${tour || "tour"} week, pulled toward usual when there are few player-weeks. Fit vs a normal week: ${Poss} ${year} season in each part (${P.n} rounds) × (impact − 1), added up, strokes per round. It shows where there's more room, not why (the shot-by-shot data could, for courses in Strategy Maps). History: ${their} strokes gained per round there against ${their} usual that same season (8 or more other rounds that year to compare with). Overall: the game fit and history together, history counting for N ÷ (N + ${KH}) with N rounds there (half at ${KH}). Tap a tournament to see why they agree or don't. A guide to fit, not a forecast.`)]);
+    samp(`Impact vs usual: strokes gained only exists because players differ, so where the field spreads out more in a part of the game there's more for a good player to gain, and where everyone does about the same (easy greens, short putts) there's less. For each course and part (every tournament played there): the spread of that week's field (every year in the stats file) against a normal ${tour || "tour"} week, pulled toward usual when there are few player-weeks. Fit vs a normal week: ${Poss} ${year} season in each part (${P.n} rounds) × (impact − 1), added up, strokes per round. It shows where there's more room, not why (the shot-by-shot data could, for courses in Strategy Maps). History: ${their} strokes gained per round there against ${their} usual that same season (8 or more other rounds that year to compare with). Overall: the game fit and history together, history counting for N ÷ (N + ${KH}) with N rounds there (half at ${KH}). Tap a tournament to see why they agree or don't. A guide to fit, not a forecast.`)]);
 }

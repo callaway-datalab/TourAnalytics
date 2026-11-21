@@ -33,7 +33,7 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
     if (!alive) return;
     if (!key) { mount(wrap, [el("h2", { class: "ip-h" }, "Recommended Practice"), el("p", { class: "muted" }, "Pick a player at the top of the page.")]); return; }
     const name = who.labels.get(key) || key.replace(/^c_/, ""), self = PI.isSelfKey(key) || who.self === key, last = self ? "You" : lastName(name); // (update 834: "your" on your own)
-    const possT = self ? "Your" : `${last}\u2019s`;
+    const possT = self ? "Your" : `${last}\u2019${/s$/i.test(last) ? "" : "s"}`, possN = self ? "your" : possT; // (update 954: the player's name, not they or their)
     mount(wrap, [el("h2", { class: "ip-h" }, `${possT} recommended practice`), el("p", { class: "muted ip-wait" }, "Building the week from the data…")]);
     const [{ field }, rounds] = await Promise.all([fieldP, PI.loadShots(key, name)]); if (!alive) return;
     if (!rounds.length) { mount(wrap, [el("h2", { class: "ip-h" }, `${possT} recommended practice`), el("p", { class: "muted" }, `No shot-by-shot rounds on record for ${name}.`)]); return; }
@@ -62,7 +62,7 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
     const seasonR = agg(P.rs, 20), used = new Set(), K = (o) => `${o.c}|${o.d}`, free = (o) => o && !used.has(K(o)), plan = [], take = (o) => { if (!o) return; used.add(K(o)); plan.push(o); };
     // 1. all season
     const s1 = [...seasonR].filter((o) => o.rd < 0).sort((a, b) => a.rd - b.rd)[0];
-    if (s1) take({ c: s1.c, d: s1.d, tone: "neg", tag: `All season`, why: `${self ? "Your" : "Their"} biggest leak in ${year}: ${Math.abs(s1.rd).toFixed(2)} strokes lost per round (${sg3(s1.shot)} a shot, ${Math.round(s1.n)} shots over ${P.rs.length} rounds)` });
+    if (s1) take({ c: s1.c, d: s1.d, tone: "neg", tag: `All season`, why: `${possT} biggest leak in ${year}: ${Math.abs(s1.rd).toFixed(2)} strokes lost per round (${sg3(s1.shot)} a shot, ${Math.round(s1.n)} shots over ${P.rs.length} rounds)` });
     // 2. lately (a different range)
     const s2 = [...formR].filter((o) => o.rd < 0 && free(o)).sort((a, b) => a.rd - b.rd)[0];
     if (s2) { const sea = seasonR.find((x) => K(x) === K(s2)); take({ c: s2.c, d: s2.d, tone: "late", tag: "Lately", why: `Costing ${Math.abs(s2.rd).toFixed(2)} strokes per round over the last ${fl} (${sg3(s2.shot)} a shot, ${Math.round(s2.n)} shots)${sea ? `, against ${sg2(sea.rd)} per round over the season` : ""}` }); }
@@ -77,15 +77,15 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
     if (noTour) evRounds.length = 0;
     if (evRounds.length >= 2) { const hereR = agg(evRounds, 6), norm = new Map(agg(P.all, 20).map((o) => [K(o), o]));
       const past = hereR.map((o) => ({ ...o, vs: o.shot - (norm.get(K(o))?.shot ?? 0) })).filter((o) => o.rd < 0 && free(o)).sort((a, b) => a.rd - b.rd)[0];
-      if (past) evPicks.push({ c: past.c, d: past.d, tone: "event", tag: evTag, why: `It has cost ${self ? "you" : "them"} here: ${Math.abs(past.rd).toFixed(2)} strokes per round in ${evRounds.length} rounds at ${theE(stName)} (${sg3(past.shot)} a shot${past.vs < -0.005 ? `, ${Math.abs(past.vs).toFixed(3)} worse than ${self ? "your" : "their"} usual from there` : ""})` }); }
+      if (past) evPicks.push({ c: past.c, d: past.d, tone: "event", tag: evTag, why: `It has cost ${self ? "you" : last} here: ${Math.abs(past.rd).toFixed(2)} strokes per round in ${evRounds.length} rounds at ${theE(stName)} (${sg3(past.shot)} a shot${past.vs < -0.005 ? `, ${Math.abs(past.vs).toFixed(3)} worse than ${possN} usual from there` : ""})` }); }
     if (!noTour && courseR && free({ c: courseR.c, d: courseR.l }) && evPicks.length < 2) evPicks.push({ c: courseR.c, d: courseR.l, tone: "event", tag: evTag, why: `What wins ${meta.name}: ${courseR.att.toFixed(1)} ${noun(courseR.c)} per round from here; ${last} ${courseR.me == null ? (self ? "have too few shots on record" : "has too few shots on record") : `${sg3(courseR.me)} strokes gained a shot`} against the top 10's ${sg3(courseR.top)} there` });
     if (E && !noTour) for (const c of ["APP", "ARG", "PUTT"].sort((a, b) => room(b) - room(a))) { if (evPicks.length >= 2) break;
       const w = [...seasonR, ...formR].filter((o) => o.c === c && free(o) && !evPicks.some((x) => K(x) === K(o))).sort((a, b) => a.rd - b.rd)[0]; if (!w) continue;
-      evPicks.push({ c: w.c, d: w.d, tone: "event", tag: evTag, why: `${PI.CATN[c]} ${Math.abs(room(c) - 1) < 0.03 ? "matters about as much as usual" : room(c) > 1 ? `is ${room(c).toFixed(2)}\u00d7 as impactful as usual` : `matters less than usual (${room(c).toFixed(2)}\u00d7)`} at ${theE(E.name)}, and this is ${self ? "your" : "their"} ${w.rd < 0 ? `weakest range in it (${sg2(w.rd)} per round)` : `least strong range in it (${sg2(w.rd)} per round)`}` }); }
+      evPicks.push({ c: w.c, d: w.d, tone: "event", tag: evTag, why: `${PI.CATN[c]} ${Math.abs(room(c) - 1) < 0.03 ? "matters about as much as usual" : room(c) > 1 ? `is ${room(c).toFixed(2)}\u00d7 as impactful as usual` : `matters less than usual (${room(c).toFixed(2)}\u00d7)`} at ${theE(E.name)}, and this is ${possN} ${w.rd < 0 ? `weakest range in it (${sg2(w.rd)} per round)` : `least strong range in it (${sg2(w.rd)} per round)`}` }); }
     for (const x of evPicks.slice(0, 2)) take(x);
     // 5. doing really well lately
     const s5 = [...formR].filter((o) => o.rd > 0 && free(o)).sort((a, b) => b.rd - a.rd)[0];
-    if (s5) take({ c: s5.c, d: s5.d, tone: "pos", tag: "Keep it sharp", why: `${self ? "Your" : "Their"} best lately: +${s5.rd.toFixed(2)} strokes gained per round over the last ${fl} (${Math.round(s5.n)} shots)${E && room(s5.c) > 1.03 ? `, and ${PI.CATN[s5.c].toLowerCase()} is ${room(s5.c).toFixed(2)}\u00d7 as impactful as usual at ${theE(E.name)}` : ""}` });
+    if (s5) take({ c: s5.c, d: s5.d, tone: "pos", tag: "Keep it sharp", why: `${possT} best lately: +${s5.rd.toFixed(2)} strokes gained per round over the last ${fl} (${Math.round(s5.n)} shots)${E && room(s5.c) > 1.03 ? `, and ${PI.CATN[s5.c].toLowerCase()} is ${room(s5.c).toFixed(2)}\u00d7 as impactful as usual at ${theE(E.name)}` : ""}` });
     // the choices: what's coming up on the schedule, then any tournament on record
     const SO = await PI.scheduleOrder(names, tour); // (update 836: the record in the schedule's order)
     const up = nx.upcoming.map((e) => e.name), opts = [...new Set([...up, ...names])], fmt = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "");
@@ -106,10 +106,21 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
       if (vs.length < 20) return null; const up = def.higher !== false; vs.sort((a, b) => (up ? b - a : a - b));
       const mid = Math.floor(vs.length / 2); // (top 25 / top 10 only where they're above the middle player: a small field has no top 25)
       return { n: vs.length, avg: vs[mid], t25: 24 < mid ? vs[24] : null, t10: 9 < mid ? vs[9] : null, up }; };
-    const thrOf = (p) => { const rs = ["late", "trend", "pos"].includes(p.tone) ? (F?.last || P.rs.slice(-12)) : P.rs, me = statOf(rs, p.c, p.d) || statOf(P.rs, p.c, p.d); if (!me) return null;
-      const def = statDef(me.k), T = fieldOf(p.c, p.d, me.k, def); if (!T) return null;
+    // (update 954) every stat the range could be judged on, in order (putts from 20-25 ft: Good Lag %, else Made Putt %): the
+    // first one with both the player's number and the tour's; it had stopped at the first, so a range whose file keeps the other
+    // said "No tour numbers for this range"
+    const statsOf = (rs, c, d) => { const out = []; for (const re of [...PL.goalStatsFor(c, d), ...(c === "PUTT" ? [/^make$/, /^goodLag$/] : [])]) { const m = new Map(); for (const r of rs) for (const o of r.obs || []) if (re.test(o.k) && o.cat === c && o.dist === d) { const a = m.get(o.k) || m.set(o.k, [0, 0]).get(o.k); a[0] += o.v * o.w; a[1] += o.w; }
+        for (const [k, a] of [...m].sort((x, y) => y[1][1] - x[1][1])) if (!out.some((o) => o.k === k)) out.push({ k, v: a[0] / a[1], w: a[1] }); } return out; };
+    const thrOf = (p) => { const rs = ["late", "trend", "pos"].includes(p.tone) ? (F?.last || P.rs.slice(-12)) : P.rs;
+      let me = null, def = null, T = null;
+      for (const cand of [...statsOf(rs, p.c, p.d), ...statsOf(P.rs, p.c, p.d)]) { const d0 = statDef(cand.k), t0 = fieldOf(p.c, p.d, cand.k, d0); if (t0) { me = cand; def = d0; T = t0; break; } }
+      if (!me) return null;
       const better = (a, b) => (T.up ? a > b + 1e-9 : a < b - 1e-9), steps = [["the tour average", T.avg], ["top 25 on tour", T.t25], ["top 10 on tour", T.t10]].filter((x) => x[1] != null);
-      const nxt = steps.find(([, v]) => !better(me.v, v) && Math.abs(me.v - v) > 1e-9) || [`${steps.at(-1)[0]} (hold it)`, steps.at(-1)[1]];
+      // (update 954) a level they're nearly at (within 2 points of a %, or 4% of a distance) is no target: the next one up
+      const near = (v) => Math.abs(me.v - v) <= (def.pct ? 2 : 0.04 * Math.abs(v));
+      let i = steps.findIndex(([, v]) => !better(me.v, v) && Math.abs(me.v - v) > 1e-9);
+      while (i >= 0 && i < steps.length - 1 && near(steps[i][1])) i++;
+      const nxt = i >= 0 ? steps[i] : [`${steps.at(-1)[0]} (hold it)`, steps.at(-1)[1]];
       return { k: me.k, def, me: me.v, meW: me.w, T, aim: nxt[1], aimL: nxt[0], win: rs === P.rs ? `${year}` : `last ${fl}` }; };
     void size; const week = plan.map((p, i) => { const label = `${AREA[p.c]} · ${p.d}`, thr = thrOf(p), kind = ({ make: "make", goodLag: "lag", prox: "prox", hitGreen: "green", gir: "green", fwy: "fairway" })[thr?.k] || PS.TARGET_KIND(p.c, label);
       // the set of 10: a % stat → that many of 10 (rounded up so it's at least the level); proximity → inside that many feet
@@ -122,6 +133,9 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
     const picked = new Set(week.map((w) => w.n)); // (update 882) every pick ticked to start
     const sizeT = null; // (update 882: no session count: tick the ones to add)
     const msg = el("span", { class: "muted small" }), send = el("button", { type: "button", class: "ip-btn" }, who.self || self ? "Add the ticked ones to my practice" : `Send the ticked ones to ${last}`);
+    // (update 954) sending practice to a player: only with Coaching ticked on User Access (and the admin); a player adds their own
+    { const own = !!(who.self || self), ok = () => own || !!who.state?.isAdmin || !!window.__taCoach; send.hidden = !ok();
+      if (!ok() && who.state?.profile?.inviteCode) import("../store.js").then((m) => m.myCoachAccess(who.state.profile.inviteCode)).then((on) => { if (on) { window.__taCoach = true; send.hidden = false; } }).catch(() => {}); }
     send.addEventListener("click", async () => { send.disabled = true; mount(msg, "Sending…");
       try { const owner = PL.planOwnerFor(who.state, key), mine = PL.isMine(key) || who.self === key, by = mine ? { self: true, name: "you" } : { uid: who.state.user?.uid || null, name: who.state.profile?.name || (who.state.isAdmin ? "Callaway" : "Coach") };
         const chosenW = week.filter((w) => picked.has(w.n)); if (!chosenW.length) { send.disabled = false; mount(msg, "Tick at least one to add."); return; }
@@ -134,7 +148,7 @@ export async function render(main, { previewClient = null, key: key0 = null, lab
     const working = card("Is the practice working?", "#d4b483", el("p", { class: "muted" }, "Checking the practice plan…"));
     mount(wrap, [el("header", { class: "ip-head" }, [el("div", {}, [el("p", { class: "ip-kick", style: "color:#ffcc00" }, `Recommended practice · current form · ${noTour ? "" : tour || ""} ${year}`), el("h2", { class: "ip-h" }, `${possT} recommended practice`), el("p", { class: "muted" }, `${week.length} sessions: a season-long leak, a recent one, one trending down, ${noTour ? "" : evPick ? `two for ${theE(evPick)}${!E ? " (not in the stats file yet: by current form alone)" : ""}, ` : ""}and a strength to keep sharp${noTour ? " (no tournament picks: there's no tour data here)" : ""}. Each target is the next tour level up from where ${self ? "you are" : `${last} is`}. Tick the ones to add.`)]), el("div", { class: "ip-ctl" }, [evSel, sizeT, send])]), msg,
       week.length ? sessions : el("p", { class: "muted" }, "Not enough recent shots by distance to recommend practice yet."), working,
-      card("How it's built", "#8e8e93", el("ol", { class: "ip-bul" }, [el("li", {}, `All season: the distance range costing the most strokes per round in ${year} (20+ shots)`), el("li", {}, `Lately: a different range costing the most over the last ${fl} (10+ shots)`), el("li", {}, `Trending down: the range that dropped the most from the ${fl} before to the last ${fl}, strokes gained per round (8+ shots in each)`), noTour ? null : el("li", {}, "For the tournament picked above (two): a range that has cost them at that event in past years (6+ shots there), what decides the course in Strategy Maps when they're short of the top 10 there, else their weakest range in the part of the game that matters most at that event (Course Fit)"), el("li", {}, `Keep it sharp: their best range over the last ${fl}`), el("li", {}, `Each is 3 sets of 10. The target comes from the range's own stat (Made Putt %, Good Lag %, Proximity, Green Hit %): ${self ? "your" : "their"} number (season for the season and tournament picks, the last ${fl} for the rest) against the tour's ${noTour ? "latest season" : `${year} season`}, among players with enough attempts there (15+ for a %, 10+ for proximity): the average (the middle player), top 25 and top 10. The aim is the next level not reached yet; at top 10 already, hold it. A % becomes that many of 10, rounded up; proximity becomes inside that many feet. Where there aren't 20+ tour players with enough attempts, or no stat for the range, it falls back to the practice page's rule of thumb and says so`)]))]);
+      card("How it's built", "#8e8e93", el("ol", { class: "ip-bul" }, [el("li", {}, `All season: the distance range costing the most strokes per round in ${year} (20+ shots)`), el("li", {}, `Lately: a different range costing the most over the last ${fl} (10+ shots)`), el("li", {}, `Trending down: the range that dropped the most from the ${fl} before to the last ${fl}, strokes gained per round (8+ shots in each)`), noTour ? null : el("li", {}, "For the tournament picked above (two): a range that has cost them at that event in past years (6+ shots there), what decides the course in Strategy Maps when they're short of the top 10 there, else their weakest range in the part of the game that matters most at that event (Course Fit)"), el("li", {}, `Keep it sharp: their best range over the last ${fl}`), el("li", {}, `Each is 3 sets of 10. The target comes from the range's own stat (Made Putt %, Good Lag %, Proximity, Green Hit %): ${possN} number (season for the season and tournament picks, the last ${fl} for the rest) against the tour's ${noTour ? "latest season" : `${year} season`}, among players with enough attempts there (15+ for a %, 10+ for proximity): the average (the middle player), top 25 and top 10. The aim is the next level not reached yet; at top 10 already, hold it. A % becomes that many of 10, rounded up; proximity becomes inside that many feet. Where there aren't 20+ tour players with enough attempts, or no stat for the range, it falls back to the practice page's rule of thumb and says so`)]))]);
     // is the practice working: ranges practised in sessions made 2+ weeks ago, tournament shots before and after
     (async () => { const owner = PL.planOwnerFor(who.state, key), items = await PL.listPlan(owner).catch(() => []); if (!alive) return;
       const t0 = new Map(); for (const s of items.filter((x) => x.type === "session")) for (const it of s.items || []) { if (!/^(APP|ARG|PUTT)\|/.test(it.key || "")) continue; const at = Date.parse(s.createdAt); if (!Number.isFinite(at) || Date.now() - at < 14 * 864e5) continue; if (!t0.has(it.key) || at < t0.get(it.key)) t0.set(it.key, at); }

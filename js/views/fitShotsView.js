@@ -8,6 +8,25 @@ const sg2 = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
 const cls = (v) => (v >= 0.005 ? "pos" : v <= -0.005 ? "neg" : "");
 const lb = (b) => String(b).replace(/^\w+\|/, ""), possOf = (n) => `${n}\u2019${/s$/i.test(n) ? "" : "s"}`;
 
+// (update 953) plain words: what a shift in the shots they face means on the course, not the distance buckets themselves
+const DOING = { OTT: "driving it better", APP: "hitting better approach shots", ARG: "chipping and pitching better", PUTT: "putting better" };
+const nums = (b) => (String(b).match(/\d+/g) || []).map(Number);
+function facedWords(x) {
+  const n = Math.abs(x.aT - x.aR), more = x.aT > x.aR, d = lb(x.b), ns = nums(d), hi = d.startsWith(">") ? Infinity : Math.max(...ns, 0), lo = d.startsWith("<") ? 0 : Math.min(...ns);
+  const amt = `${n.toFixed(1)} ${more ? "more" : "fewer"} a round`;
+  if (x.cat === "PUTT") {
+    if (hi <= 5) return more ? `more short putts left (${amt} from ${d}): their chips and long putts finish closer to the hole` : `fewer short putts left to tidy up (${amt} from ${d}): they hole more of their longer putts first`;
+    if (lo >= 20) return more ? `more long putts (${amt} from ${d}): they hit more greens, but from farther away` : `fewer long putts (${amt} from ${d}): their approach shots finish closer to the hole`;
+    return more ? `more mid-length putts (${amt} from ${d}): their approaches finish closer` : `fewer mid-length putts (${amt} from ${d}): they hit it closer, or hole more from farther away`;
+  }
+  if (x.cat === "ARG") return more ? `more chips and pitches (${amt} from ${d}): they miss more greens, often from going for them` : `fewer chips and pitches (${amt} from ${d}): they hit more greens`;
+  if (x.cat === "APP") {
+    if (lo >= 180) return more ? `more long approach shots (${amt} from ${d}): going for greens in two, or shorter drives` : `fewer long approach shots (${amt} from ${d}): they drive it farther, so they come in with shorter clubs`;
+    if (hi <= 120) return more ? `more short approach shots (${amt} from ${d}): longer drives leave them wedges in` : `fewer short approach shots (${amt} from ${d})`;
+    return `${more ? "more" : "fewer"} approach shots from ${d} (${amt})`;
+  }
+  return `${amt} shots from ${d}`;
+}
 /** meta: the course's record (with .fit); opts: { prof (missProfile), mf (missFit), who ("you" | a name), self, fitNote } */
 export function fitShotsBlock(meta, { prof = null, mf = null, who = null, self = false } = {}) {
   const F = meta.fit, W = whyTopWin(F), H = whereTopWin(F), kids = [];
@@ -18,18 +37,20 @@ export function fitShotsBlock(meta, { prof = null, mf = null, who = null, self =
     kids.push(el("div", { class: "fs-blk" }, [el("h4", {}, "Why the top 10 win here"),
       el("ul", { class: "fs-ul" }, [
         ...top.map((p) => { const b = Math.max(0, p.better), m = p.more, mostly = Math.abs(m) < 0.25 * Math.abs(p.gap) ? "mostly better shots" : b < 0.5 * p.gap ? "mostly more of the shots that matter" : "both";
-          return el("li", {}, [el("b", {}, `${CAT_NAMES[p.cat]}: ${sg2(p.gap)} a round`), ` over the rest of the field — ${sg2(p.better)} from hitting the same shots better, ${sg2(p.more)} from ${p.more >= 0 ? "facing more" : "facing fewer"} of them (${mostly})`]); }),
-        W.faced.length ? el("li", {}, `They face different shots: ${W.faced.map((x) => `${Math.abs(x.aT - x.aR).toFixed(1)} ${x.aT > x.aR ? "more" : "fewer"} from ${lb(x.b)}`).join(", ")} a round than the rest (the shot before set them up${W.parts.find((p) => p.cat === "OTT" && p.gap > 0.1) ? ": they drive it better here" : ""})`) : null,
+          // (update 953) plain words: how much they gain, and how: hitting the shots better, or the shots they get to play
+          const how = mostly === "mostly better shots" ? `mostly by ${DOING[p.cat]} (${sg2(p.better)})` : mostly === "both" ? `by ${DOING[p.cat]} (${sg2(p.better)}) and from the shots they get to play (${sg2(p.more)})` : `mostly from the shots they get to play (${sg2(p.more)}), more than by ${DOING[p.cat]} (${sg2(p.better)})`;
+          return el("li", {}, [el("b", {}, `${CAT_NAMES[p.cat]}: the top 10 gain ${p.gap.toFixed(2)} strokes a round on the rest of the field`), `, ${how}`]); }),
+        W.faced.length ? el("li", {}, [el("b", {}, "Compared with the rest, the top 10 have: "), el("ul", { class: "fs-ul fs-sub" }, W.faced.map((x) => el("li", {}, facedWords(x))))]) : null,
       ]),
-      el("p", { class: "fs-note" }, "Better: strokes gained a shot, at the rest's number of attempts. More: attempts a round, at strokes gained a shot. Together they make the top 10's edge in that part.")]));
+      el("p", { class: "fs-note" }, "Strokes a round. \u201cBetter\u201d: what they gain hitting the same shots better. \u201cThe shots they get to play\u201d: what they gain from easier shots, such as shorter approaches after longer drives, or fewer chips because they hit more greens.")]));
   }
   // 2. where: a few holes or everywhere, and the blow-up holes
   if (H) {
     const t3 = H.top3.filter((x) => x.edge > 0);
     kids.push(el("div", { class: "fs-blk" }, [el("h4", {}, "Where they win it"),
       el("ul", { class: "fs-ul" }, [
-        t3.length ? el("li", {}, H.even ? `All over the course: the three biggest holes (${t3.map((x) => `No. ${x.h}`).join(", ")}) hold only ${Math.round(H.conc * 100)}% of the top 10's edge` : [el("b", {}, `${Math.round(H.conc * 100)}% of the top 10's edge comes from three holes: `), t3.map((x) => `No. ${x.h} (par ${x.par}, ${x.edge.toFixed(2)} a round better than the rest)`).join(", ")]) : null,
-        ...H.blowups.map((x) => el("li", {}, [el("b", {}, `Blow-up hole No. ${x.h} (par ${x.par}): `), `${Math.round(x.dbl * 100)}% doubles or worse (top 10 ${Math.round(x.dblTop * 100)}%, the rest ${Math.round(x.dblRest * 100)}%), costing the field ${x.blow.toFixed(2)} a round beyond a bogey`])),
+        t3.length ? el("li", {}, H.even ? `All over the course: even the three holes where they gain most (${t3.map((x) => `No. ${x.h}`).join(", ")}) are only ${Math.round(H.conc * 100)}% of the top 10's edge` : [el("b", {}, `${Math.round(H.conc * 100)}% of the top 10's edge comes from three holes: `), t3.map((x) => `No. ${x.h} (par ${x.par}, where they score ${x.edge.toFixed(2)} strokes better than the rest)`).join(", ")]) : null,
+        ...H.blowups.map((x) => el("li", {}, [el("b", {}, `Blow-up hole No. ${x.h} (par ${x.par}): `), `${Math.round(x.dbl * 100)}% of scores are double bogey or worse (top 10: ${Math.round(x.dblTop * 100)}%, everyone else: ${Math.round(x.dblRest * 100)}%): those cost the field ${x.blow.toFixed(2)} strokes a round more than if they'd been bogeys`])),
         !H.blowups.length ? el("li", {}, "No blow-up holes: no hole has 6% or more doubles or worse") : null,
       ])]));
   }
@@ -39,12 +60,12 @@ export function fitShotsBlock(meta, { prof = null, mf = null, who = null, self =
     kids.push(el("div", { class: "fs-blk fs-me" }, [el("h4", {}, `${self ? "Your" : possOf(who)} misses here`),
       el("ul", { class: "fs-ul" }, [
         ...missWords(prof, Who || "They").map((t) => el("li", { class: "fs-m" }, t)),
-        el("li", {}, [el("b", {}, `What ${poss} misses are worth here: `), el("span", { class: cls(mf.total) }, sg2(mf.total)), ` a round against an average player (off the tee ${sg2(mf.tee)}, approaches ${sg2(mf.app)}${mf.ratio != null ? `, blow-ups ${sg2(mf.blow)}` : ""})`]),
+        el("li", {}, [el("b", {}, `How ${poss} usual misses play here: `), el("span", { class: cls(mf.total) }, sg2(mf.total)), ` strokes a round compared with an average player (off the tee ${sg2(mf.tee)}, approaches ${sg2(mf.app)}${mf.ratio != null ? `, big numbers ${sg2(mf.blow)}` : ""})`]),
         ...worst.map((x) => el("li", {}, [el("b", {}, `No. ${x.h}: `), el("span", { class: "neg" }, sg2(-x.cost)), x.why.length ? ` — ${x.why.join("; ")}` : ""])),
-        mf.without && mf.without.cost >= 0.05 ? el("li", {}, [el("b", {}, `Avoid trouble on No. ${mf.without.h}: `), `the rest of the course is worth ${sg2(mf.without.total)} a round to ${poss} misses${mf.total < 0 && mf.without.total >= 0 ? ": the one hole that makes it a poor fit" : ""}`]) : null,
+        mf.without && mf.without.cost >= 0.05 ? el("li", {}, [el("b", {}, `No. ${mf.without.h} is the hole to watch: `), `without it, ${poss} misses would ${mf.without.total >= 0 ? "gain" : "cost"} ${Math.abs(mf.without.total).toFixed(2)} strokes a round here${mf.total < 0 && mf.without.total >= 0 ? ": it's the one hole that makes this a poor fit" : ""}`]) : null,
         ...best.map((x) => el("li", {}, [el("b", {}, `No. ${x.h}: `), el("span", { class: "pos" }, sg2(-x.cost)), " — suits their misses"])),
       ]),
-      el("p", { class: "fs-note" }, `Misses from every course with shot data (${prof.courses} course${prof.courses === 1 ? "" : "s"}), pulled toward the field's when there are few. Worth here: which way ${self ? "you miss" : "they miss"}, not how often (that's ${self ? "your" : "their"} driving and approach play, already in the parts of the game): at the field's miss rate on each hole, ${self ? "your" : "their"} split of the misses (left against right off the tee; short, long, left, right on the approach) against the field's, times what each side costs there. Blow-ups: ${self ? "your" : "their"} doubles or worse against the field's, where this course's cost more or less than a usual course's.`)]));
+      el("p", { class: "fs-note" }, `Based on where ${self ? "you" : "they"} miss on every course with shot data (${prof.courses} course${prof.courses === 1 ? "" : "s"}; closer to an average player's when there are few). This is about which way ${self ? "you miss" : "they miss"}, not how often (that's already in ${self ? "your" : "their"} driving and approach numbers): on each hole here, what ${self ? "your" : "their"} usual misses (left or right off the tee; short, long, left or right of the green) would cost, compared with an average player's. Big numbers: ${self ? "your" : "their"} double bogeys or worse, where this course punishes them more or less than usual.`)]));
   } else if (prof) kids.push(el("div", { class: "fs-blk fs-me" }, [el("h4", {}, `${self ? "Your" : possOf(who)} misses`), el("ul", { class: "fs-ul" }, missWords(prof, Who || "They").map((t) => el("li", {}, t)))]));
   return kids.length ? el("div", { class: "fs" }, kids) : null;
 }

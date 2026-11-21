@@ -1577,6 +1577,25 @@ html[data-theme="light"] .hp-strip .hp-grid { stroke: rgba(0,0,0,0.10); } html[d
   .cf-det { max-width: none !important; }
   .cf-hist, .cf-parts, .ip-card .ip-t { display: table !important; overflow: visible !important; white-space: normal !important; width: 100% !important; table-layout: auto; }
   .cf-parts td, .cf-parts th, .cf-hist td, .cf-hist th { padding: 4px 3px !important; font-size: 0.68rem !important; white-space: nowrap; }
-  .cf-hist th:nth-child(2), .cf-hist td:nth-child(2), .cf-hist th:nth-child(4), .cf-hist td:nth-child(4), .cf-hist th:nth-child(5), .cf-hist td:nth-child(5) { display: none; }
+  .cf-hist.cf-one th:nth-child(2), .cf-hist.cf-one td:nth-child(2), .cf-hist th:nth-child(4), .cf-hist td:nth-child(4), .cf-hist th:nth-child(5), .cf-hist td:nth-child(5) { display: none; } /* (update 952: the tournament kept where a course has had more than one) */
+  .cf-hist td:nth-child(2) { white-space: normal !important; min-width: 5.5em; }
   .cf-cols > div { overflow-x: visible !important; }
 }
+
+/* (update 952) Course Fit by course: the tournaments held there in small type under the course's name */
+.cf-evs { display: block; margin: 2px 0 0 1.1em; font-size: 0.7rem; line-height: 1.3; color: var(--ip-mute); font-weight: 400; }
+/* (update 953) the top 10's different shots, one plain line each */
+.fs-ul.fs-sub { margin-top: 4px; gap: 3px; font-size: 0.85rem; }
+/* (update 954) finishes by colour: a win bright green, top 10 green, 11-25 yellow-green, 26-50 yellow, worse orange, missed cut red */
+.fin-win { color: #39ff6a !important; text-shadow: 0 0 10px rgba(57,255,106,0.35); }
+.fin-t10 { color: #30d158 !important; }
+.fin-t25 { color: #a8d93a !important; }
+.fin-t50 { color: #ffd60a !important; }
+.fin-low { color: #ff9f0a !important; }
+.fin-cut { color: #ff453a !important; }
+html[data-theme="light"] .fin-win { color: #0a9a2c !important; text-shadow: none; }
+html[data-theme="light"] .fin-t10 { color: #1f8f3a !important; }
+html[data-theme="light"] .fin-t25 { color: #6b8f12 !important; }
+html[data-theme="light"] .fin-t50 { color: #a67c00 !important; }
+html[data-theme="light"] .fin-low { color: #c25e00 !important; }
+html[data-theme="light"] .fin-cut { color: #c4261d !important; }

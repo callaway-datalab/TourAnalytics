@@ -93,11 +93,11 @@ export function missWords(P, who = "They") {
   const out = [];
   if (P.tee.n >= 20) { const lr = P.tee.L + P.tee.R ? P.tee.L / (P.tee.L + P.tee.R) : 0.5, flr = P.field.tee.L + P.field.tee.R ? P.field.tee.L / (P.field.tee.L + P.field.tee.R) : 0.5;
     const side = lr >= flr + 0.08 ? "left" : lr <= flr - 0.08 ? "right" : null;
-    out.push(`Off the tee: ${Math.round(P.tee.C * 100)}% fairways (the field ${Math.round(P.field.tee.C * 100)}%); misses ${side ? `go ${side} ${Math.round((side === "left" ? lr : 1 - lr) * 100)}% of the time (the field ${Math.round((side === "left" ? flr : 1 - flr) * 100)}%)` : `split about evenly left and right (${Math.round(lr * 100)}% left)`} · ${P.tee.n} tee shots`); }
+    out.push(`Off the tee: hits ${Math.round(P.tee.C * 100)}% of fairways (the average player: ${Math.round(P.field.tee.C * 100)}%); ${side ? `when they miss, it's ${side} ${Math.round((side === "left" ? lr : 1 - lr) * 100)}% of the time (the average player: ${Math.round((side === "left" ? flr : 1 - flr) * 100)}%)` : `misses about evenly left and right (${Math.round(lr * 100)}% left)`} · ${P.tee.n} tee shots`); }
   if (P.app.n >= 20) { const miss = 1 - P.app.G, fmiss = 1 - P.field.app.G, sh = (s) => (miss ? P.app[s] / miss : 0), fsh = (s) => (fmiss ? P.field.app[s] / fmiss : 0);
     const lean = ["Short", "Long", "Left", "Right"].map((s) => ({ s, d: sh(s) - fsh(s) })).sort((a, b) => b.d - a.d)[0];
-    out.push(`Approaches: ${Math.round(P.app.G * 100)}% on the green (the field ${Math.round(P.field.app.G * 100)}%)${lean.d >= 0.05 ? `; misses ${lean.s.toLowerCase()} more than most (${Math.round(sh(lean.s) * 100)}% of misses, the field ${Math.round(fsh(lean.s) * 100)}%)` : "; misses spread like the field's"} · ${P.app.n} approaches`); }
-  if (P.holes >= 30 && P.dbl != null) out.push(`Doubles or worse: ${(P.dbl * 18).toFixed(2)} a round (the field ${(P.field.dbl * 18).toFixed(2)}) · ${P.holes} holes`);
+    out.push(`Approaches: hits ${Math.round(P.app.G * 100)}% of greens (the average player: ${Math.round(P.field.app.G * 100)}%)${lean.d >= 0.05 ? `; when they miss, it's ${lean.s.toLowerCase()} more often than most (${Math.round(sh(lean.s) * 100)}% of their misses, against ${Math.round(fsh(lean.s) * 100)}% for the average player)` : "; their misses spread like most players'"} · ${P.app.n} approaches`); }
+  if (P.holes >= 30 && P.dbl != null) out.push(`Double bogeys or worse: ${(P.dbl * 18).toFixed(2)} a round (the average player: ${(P.field.dbl * 18).toFixed(2)}) · ${P.holes} holes`);
   return out.length ? out : [`${who} have too few shots in the course files for a miss pattern yet.`];
 }
 
@@ -122,7 +122,7 @@ export function missFit(P, F, usualExposure = null, K = 40) {
       const fLs = fM ? fL / fM : 0.5, myLs = shrink(myM ? P.tee.L / myM : null, fLs, P.tee.n * (myM || 0));
       if (fM && D.L?.[0] && D.R?.[0]) tee = fM * (myLs - fLs) * (mean(D.L) - mean(D.R));
       const cL = D.L?.[0] >= 5 ? mean(D.L) - mean(D.C) : null, cR = D.R?.[0] >= 5 ? mean(D.R) - mean(D.C) : null;
-      if (cL != null && cR != null && Math.abs(cL - cR) >= 0.15) why.push(`a drive ${cL > cR ? "left" : "right"} costs ${f2m(Math.max(cL, cR))} against the fairway (${cL > cR ? "right" : "left"} ${f2m(Math.min(cL, cR))})`);
+      if (cL != null && cR != null && Math.abs(cL - cR) >= 0.15) why.push(`a drive missed ${cL > cR ? "left" : "right"} costs ${f2m(Math.max(cL, cR))} strokes more than finding the fairway (missed ${cL > cR ? "right" : "left"}: ${f2m(Math.min(cL, cR))})`);
     }
     // the approach
     const A = split5Sum(X.app), an = SIDES5.reduce((t, s) => t + A[s][0], 0);
@@ -131,7 +131,7 @@ export function missFit(P, F, usualExposure = null, K = 40) {
       const M4 = ["Short", "Long", "Left", "Right"], fMiss = M4.reduce((t, s) => t + A[s][0], 0) / an, myMiss = M4.reduce((t, s) => t + (P.app[s] || 0), 0), fTot = M4.reduce((t, s) => t + A[s][0], 0);
       if (fMiss && myMiss) for (const s of M4) { if (!A[s][0]) continue; const fs = A[s][0] / fTot, ms = shrink(P.app[s] / myMiss, fs, P.app.n * myMiss); app += fMiss * (ms - fs) * (A[s][1] / A[s][0]); }
       const worst = ["Short", "Long", "Left", "Right"].filter((s) => A[s][0] >= 5).map((s) => ({ s, c: A[s][1] / A[s][0] - A.G[1] / A.G[0] })).sort((a, b) => b.c - a.c)[0];
-      if (worst && worst.c >= 0.5) why.push(`an approach missed ${worst.s.toLowerCase()} costs ${worst.c.toFixed(2)} against hitting the green`);
+      if (worst && worst.c >= 0.5) why.push(`an approach missed ${worst.s.toLowerCase()} costs ${worst.c.toFixed(2)} strokes more than hitting the green`);
     }
     res.tee += tee; res.app += app;
     res.holes.push({ h: Number(h), par: X.par, cost: tee + app, tee, app, why });
