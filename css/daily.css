@@ -659,7 +659,7 @@ html[data-theme="light"] .td-bars .td-bar.m-f, html[data-theme="light"] .td-lege
   .st-pg-pills { flex-wrap: wrap; }
 }
 @media (max-width: 640px) {
-  .cf-t th:nth-child(4), .cf-t th:nth-child(5), .cf-t .cf-tr > td:nth-child(5) { display: none; }
+  .cf-t > thead > tr > th:nth-child(6), .cf-t .cf-tr > td:nth-child(6) { display: none; } /* (update 950: the bar; Game fit, History, Overall all kept) */
   .cf-t th:nth-child(3) { white-space: normal; }
   .cf-t td:nth-child(2) { white-space: normal; }
   .cf-open > td { white-space: normal; }
@@ -1557,4 +1557,26 @@ html[data-theme="light"] .hp-strip .hp-grid { stroke: rgba(0,0,0,0.10); } html[d
   /* the year pills: on one line when they fit (six do), no sideways scroll */
   .sg-years { display: flex !important; flex-wrap: wrap !important; justify-content: center; gap: 2px 0 !important; max-width: 100% !important; overflow: visible !important; } /* (more years than fit: a second line, never a sideways scroll) */
   .sg-years a, .sg-years a:hover { flex: 1 1 auto; min-width: 0; text-align: center; padding: 0.3rem 0.3rem !important; font-size: 0.74rem !important; white-space: nowrap; }
+}
+
+/* (update 950) Course Fit: Best/Toughest fits folded to start; history's rounds under its number; on phones every table fits
+   the width (no sideways scroll): smaller type, the history table without Course, SG rank and Rounds */
+.cf-fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+.cf-fold > summary::-webkit-details-marker { display: none; }
+.cf-fold > summary::after { content: "\25B8"; color: var(--ip-mute); transition: transform .15s; }
+.cf-fold[open] > summary::after { transform: rotate(90deg); }
+.cf-fold > summary .ip-kick { margin: 0; }
+.cf-fold[open] > summary { margin-bottom: 6px; }
+.cf-rds { display: block; font-size: 0.66rem; color: var(--ip-mute); font-weight: 400; }
+.cf-histwhy b { color: var(--ip-gold); }
+@media (max-width: 640px) {
+  .cf-t td, .cf-t th { padding: 5px 4px !important; font-size: 0.74rem !important; }
+  .cf-t th { white-space: normal !important; line-height: 1.15; }
+  .cf-t .cf-tag { display: inline-block; margin: 2px 0 0 4px; font-size: 0.6rem; padding: 0 5px; }
+  .cf-open > td { padding: 4px 6px 12px !important; }
+  .cf-det { max-width: none !important; }
+  .cf-hist, .cf-parts, .ip-card .ip-t { display: table !important; overflow: visible !important; white-space: normal !important; width: 100% !important; table-layout: auto; }
+  .cf-parts td, .cf-parts th, .cf-hist td, .cf-hist th { padding: 4px 3px !important; font-size: 0.68rem !important; white-space: nowrap; }
+  .cf-hist th:nth-child(2), .cf-hist td:nth-child(2), .cf-hist th:nth-child(4), .cf-hist td:nth-child(4), .cf-hist th:nth-child(5), .cf-hist td:nth-child(5) { display: none; }
+  .cf-cols > div { overflow-x: visible !important; }
 }

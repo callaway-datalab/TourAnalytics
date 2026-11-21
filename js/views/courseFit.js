@@ -42,17 +42,43 @@ export async function fitTab(box, key, name) {
   const shotFor = (n) => { if (!FS || !prof) return null; const m = FS.metaForEvent(metas, n, PI.matchEventName); if (!m) return null; const mf = FS.missFit(prof, m.fit, usual); mf.tee = cap(mf.tee); mf.app = cap(mf.app); mf.blow = cap(mf.blow); mf.total = mf.tee + mf.app + mf.blow; return { meta: m, mf }; };
   // their own record at each tournament (every year, their own file or the stats file)
   const mine = (fp?.rounds || base).filter((r) => !tour || r.tour === tour);
+  // (update 950) course history: how they've actually played there against their own usual in those same years (the rest
+  // of that season's rounds), in total and in each part of the game; blended with the game fit by rounds played there:
+  // history counts for half once there are KH rounds of it (a week or two there is mostly luck; ten years of it isn't)
+  const KH = 32, RSD = 2.8, inC = (r, c) => (r.shots || []).reduce((t, s) => t + (s.cat === c ? s.sg || 0 : 0), 0);
+  const U = new Map(); for (const r of mine) { if (r.eventLevel) continue; const y = PI.yrOf(r), o = U.get(y) || U.set(y, { n: 0, s: 0, c: Object.fromEntries(PI.CATS.map((c) => [c, 0])) }).get(y); o.n++; o.s += tot(r); for (const c of PI.CATS) o.c[c] += inC(r, c); }
+  const histOf = (here) => { const by = new Map(); for (const r of here) { if (r.eventLevel) continue; const y = PI.yrOf(r); (by.get(y) || by.set(y, []).get(y)).push(r); }
+    let n = 0, s = 0; const cs = Object.fromEntries(PI.CATS.map((c) => [c, 0])), yrs = [];
+    for (const [y, hs] of by) { const u = U.get(y), rest = u ? u.n - hs.length : 0; if (rest < 8) continue; // (their usual that year: 8 or more other rounds)
+      yrs.push(y); for (const r of hs) { n++; s += tot(r) - (u.s - hs.reduce((t, q) => t + tot(q), 0)) / rest; for (const c of PI.CATS) cs[c] += inC(r, c) - (u.c[c] - hs.reduce((t, q) => t + inC(q, c), 0)) / rest; } }
+    return n ? { n, resid: s / n, cat: Object.fromEntries(PI.CATS.map((c) => [c, cs[c] / n])), yrs: yrs.sort() } : null; };
   const rows = D.map((d) => { const here = mine.filter((r) => evName(r.event) === d.name);
     const parts = PI.CATS.map((c) => ({ c, room: d.room[c], me: P.cat[c] || 0, edge: (P.cat[c] || 0) * (d.room[c] - 1) }));
     const eff0 = parts.reduce((t, x) => t + x.edge, 0), sh = shotFor(d.name), eff = eff0 + (sh ? sh.mf.total : 0);
-    return { ...d, fit: season + eff, eff, eff0, sh, here: here.length, hereSg: here.length ? here.reduce((t, r) => t + tot(r), 0) / here.length : null, parts }; }).sort((a, b) => b.eff - a.eff);
+    const hist = histOf(here), adj = hist ? (KH * eff + hist.n * hist.resid) / (KH + hist.n) : eff;
+    return { ...d, fit: season + adj, eff, adj, hist, eff0, sh, here: here.length, hereSg: here.length ? here.reduce((t, r) => t + tot(r), 0) / here.length : null, parts }; }).sort((a, b) => b.adj - a.adj);
   const xx = (v) => `${v.toFixed(2)}×`, part = (c) => PI.CATN[c].toLowerCase();
   const why = (r) => { const most = [...r.parts].sort((a, b) => b.room - a.room)[0], least = [...r.parts].sort((a, b) => a.room - b.room)[0], big = [...r.parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge))[0];
     const edgeTxt = Math.abs(big.edge) < 0.01 ? `${Poss} game is worth about the same here as in a normal week.`
       : big.me >= 0 ? `${Poss} ${part(big.c)}, a strength (${sg2(big.me)} per round in a normal week), is worth ${Math.abs(big.edge).toFixed(2)} ${big.edge >= 0 ? "more" : "less"} here.`
       : `${Poss} ${part(big.c)}, a weakness (${sg2(big.me)} per round in a normal week), costs ${Math.abs(big.edge).toFixed(2)} ${big.edge < 0 ? "more" : "less"} here.`;
     return `Here, ${part(most.c)} matters most (${xx(most.room)} as much as in a normal week) and ${part(least.c)} least (${xx(least.room)}). ${edgeTxt}`; }; // (update 838: plain words)
-  const max = Math.max(0.01, ...rows.map((r) => Math.abs(r.eff)));
+  const max = Math.max(0.01, ...rows.map((r) => Math.abs(r.adj)));
+  // (update 950) why history and the game fit disagree: the part of the game where they've played most differently there
+  // from what the fit expects, and whether that's more than luck over that many rounds (a round's strokes gained swings
+  // about ±${RSD} on its own, so N rounds' average about ±RSD/√N)
+  const Who = self ? "You" : last, them = self ? "you" : "them", their = self ? "your" : "their";
+  const histWhy = (r) => { const h = r.hist;
+    if (!h) return `${self ? "You haven't" : `${last} hasn't`} played it enough on record to judge (a year there needs 8 other rounds that season to compare with): the overall fit is the game fit.`;
+    const pred = Object.fromEntries(r.parts.map((x) => [x.c, x.edge + (r.sh ? (x.c === "OTT" ? r.sh.mf.tee : x.c === "APP" ? r.sh.mf.app : 0) : 0)]));
+    const gap = h.resid - r.eff, se = RSD / Math.sqrt(h.n), big = [...PI.CATS].sort((a, b) => Math.abs(h.cat[b] - pred[b]) - Math.abs(h.cat[a] - pred[a]))[0];
+    const yrs = h.yrs.length > 1 ? `${h.yrs[0]}-${h.yrs.at(-1).slice(2)}` : h.yrs[0];
+    const lines = [`${Who} ${self ? "have" : "has"} played ${h.n} rounds there (${yrs}): ${sg2(h.resid)} a round against ${their} usual those years. The game fit expected ${sg2(r.eff)}.`];
+    if (Math.abs(gap) < 0.15) lines.push("History agrees with the fit.");
+    else { lines.push(`${gap > 0 ? "Better" : "Worse"} than the fit expects by ${Math.abs(gap).toFixed(2)} a round, mostly ${PI.CATN[big].toLowerCase()}: ${sg2(h.cat[big])} a round there against ${their} usual, where the fit expected ${sg2(pred[big])}.`);
+      lines.push(Math.abs(gap) <= 1.5 * se ? `Over ${h.n} rounds, luck alone moves an average by about ±${se.toFixed(2)} a round, so this may just be luck.` : `That's more than luck alone explains over ${h.n} rounds (about ±${se.toFixed(2)}): something about the place suits ${them} ${gap > 0 ? "better" : "less"} than ${their} stats say.`); }
+    lines.push(`Overall fit ${sg2(r.adj)}: history counts for ${Math.round((100 * h.n) / (KH + h.n))}% (${h.n} rounds; it counts for half at ${KH}).`);
+    return lines.join(" "); };
   // (update 820) opened: why, the parts, and their own weeks there (every year in the stats file), side by side
   // the official finish when the results are in; else their place by strokes gained among the file's players (marked ≈)
   // (update 834) two columns: the official finish (Won, T5, Missed cut …) where the results are in (else their place by
@@ -68,19 +94,20 @@ export async function fitTab(box, key, name) {
     const shBlock = r.sh ? el("div", { class: "cf-shots" }, [el("p", { class: "cf-sub" }, `From the shot data at ${r.sh.meta.name}`),
       el("p", { class: "muted small" }, `Fit vs a normal week ${sg2(r.eff)}: the parts of the game ${sg2(r.eff0)}, ${poss} misses off the tee ${sg2(r.sh.mf.tee)}, approaches ${sg2(r.sh.mf.app)}, blow-ups ${sg2(r.sh.mf.blow)}.`),
       fitShotsBlock(r.sh.meta, { prof, mf: r.sh.mf, who: last, self })]) : el("p", { class: "muted small cf-noshots" }, "No shot data for this course yet: the fit is from the stats file's parts of the game only.");
-    return el("div", { class: "cf-det" }, [el("p", { class: "cf-why" }, why(r)), shBlock, r.small ? el("p", { class: "cf-small" }, `Small field (about ${Math.round(r.perYr)} players a year in the file, against about ${Math.round(mid)} usually; likely no cut): a rough guide.`) : null,
+    return el("div", { class: "cf-det" }, [el("p", { class: "cf-why" }, why(r)), el("p", { class: "cf-why cf-histwhy" }, [el("b", {}, "Course history: "), histWhy(r)]), shBlock, r.small ? el("p", { class: "cf-small" }, `Small field (about ${Math.round(r.perYr)} players a year in the file, against about ${Math.round(mid)} usually; likely no cut): a rough guide.`) : null,
       el("div", { class: "cf-cols" }, [
-        el("div", {}, [el("p", { class: "cf-sub" }, "What the tournament asks"), el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part of the game", "Impact here vs usual", self ? "You normally" : `${last} normally`, "What it's worth here"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
+        el("div", {}, [el("p", { class: "cf-sub" }, "What the tournament asks"), el("table", { class: "ip-t cf-parts" }, [el("thead", {}, el("tr", {}, ["Part", "Impact here", "Normally", "Worth here"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
           el("tbody", {}, r.parts.map((x) => el("tr", {}, [el("td", {}, PI.CATN[x.c]), el("td", { class: "num strong" }, [xx(x.room), el("span", { class: "cf-arrow" }, x.room > 1.03 ? " ▲" : x.room < 0.97 ? " ▼" : "")]), el("td", { class: `num ${cls(x.me)}` }, `${sg2(x.me)} per round`), el("td", { class: `num strong ${cls(x.edge)}` }, sg2(x.edge))])))])]),
         el("div", {}, [el("p", { class: "cf-sub" }, `${self ? "You" : last} at ${theE(r.name)}`), hist])]),
-      el("p", { class: "muted small" }, `Impact vs usual: how far the field spread out in each part here (${r.n} player-weeks, ${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]}) against a normal ${tour || "tour"} week, 1.00× being usual. What it's worth here: ${Poss} normal week in that part × (impact − 1). Projected there: ${sg2(r.fit)} strokes gained per round.${H.length ? " Finish: the official finish where the results are in (≈: their place by strokes gained among those who played every round, until the results are in). SG rank: their rank that week by strokes gained per round, among everyone in the stats file, whatever rounds they played. The parts are strokes gained per round." : ""}`)]); };
+      el("p", { class: "muted small" }, `Impact vs usual: how far the field spread out in each part here (${r.n} player-weeks, ${r.yrs.length > 1 ? `${r.yrs[0]}-${r.yrs.at(-1).slice(2)}` : r.yrs[0]}) against a normal ${tour || "tour"} week, 1.00× being usual. What it's worth here: ${Poss} normal week in that part × (impact − 1). Projected there (with course history): ${sg2(r.fit)} strokes gained per round.${H.length ? " Finish: the official finish where the results are in (≈: their place by strokes gained among those who played every round, until the results are in). SG rank: their rank that week by strokes gained per round, among everyone in the stats file, whatever rounds they played. The parts are strokes gained per round." : ""}`)]); };
   const table = el("div", { class: "ip-tw" }, el("table", { class: "ip-t cf-t" }, [
-    el("thead", {}, el("tr", {}, ["#", "Tournament", "Fit vs a normal week", "", "Rounds there"].map((h, i) => el("th", { class: i === 2 || i === 4 ? "num" : null }, h)))),
-    el("tbody", {}, rows.flatMap((r, i) => { const open = el("tr", { class: "cf-open", hidden: true }, el("td", { colspan: "5" }, null));
+    el("thead", {}, el("tr", {}, ["#", "Tournament", "Game fit", "History", "Overall", ""].map((h, i) => el("th", { class: i >= 2 && i <= 4 ? "num" : null, title: ["", "", "How well the parts of the game suit it, against a normal week", "How they've actually played there against their usual those years (rounds there)", "The two together: history counts more the more rounds there", ""][i] || null }, h)))),
+    el("tbody", {}, rows.flatMap((r, i) => { const open = el("tr", { class: "cf-open", hidden: true }, el("td", { colspan: "6" }, null));
       const tr = el("tr", { class: "cf-tr", tabindex: "0", role: "button", "aria-expanded": "false" }, [el("td", { class: "ip-rk" }, String(i + 1)), el("td", {}, [el("span", { class: "cf-caret", "aria-hidden": "true" }, "▸"), r.name, r.small ? el("span", { class: "cf-tag", title: "Small field: a rough guide" }, "small field") : null, r.sh ? el("span", { class: "cf-tag cf-sh", title: "Includes the shot data: misses and blow-up holes" }, "shot data") : null, (() => { const e = entered(r.name); return e ? el("span", { class: "cf-tag cf-in", title: `${name} is in the field${e.start ? ` (${e.start})` : ""}` }, "✓ entered") : null; })()]),
-        el("td", { class: `num strong ${cls(r.eff)}` }, sg2(r.eff)),
-        el("td", { class: "cf-bart" }, el("span", { class: "cf-mid" }, el("i", { class: r.eff >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(r.eff) / max) * 50)}%` }))),
-        el("td", { class: "num muted" }, r.here ? String(r.here) : "—")]);
+        el("td", { class: `num ${cls(r.eff)}` }, sg2(r.eff)),
+        el("td", { class: `num ${r.hist ? cls(r.hist.resid) : "muted"}` }, r.hist ? [sg2(r.hist.resid), el("small", { class: "cf-rds" }, `${r.hist.n} rds`)] : "—"),
+        el("td", { class: `num strong ${cls(r.adj)}` }, sg2(r.adj)),
+        el("td", { class: "cf-bart" }, el("span", { class: "cf-mid" }, el("i", { class: r.adj >= 0 ? "pos" : "neg", style: `width:${Math.round((Math.abs(r.adj) / max) * 50)}%` })))]);
       const toggle = () => { const on = open.hidden; if (on && !open.firstChild.firstChild) open.firstChild.append(detail(r)); open.hidden = !on; tr.classList.toggle("on", on); tr.setAttribute("aria-expanded", String(on)); };
       tr.addEventListener("click", toggle); tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
       return [tr, open]; }))]));
@@ -93,9 +120,12 @@ export async function fitTab(box, key, name) {
   const parts = (r) => { const xs = r.parts.filter((x) => Math.abs(x.edge) >= 0.005).sort((a, b) => b.edge - a.edge).map((x) => `${PI.CATN[x.c].toLowerCase()} ${sg2(x.edge)} (${sg2(x.me)} × ${(x.room - 1 >= 0 ? "+" : "−") + Math.abs(x.room - 1).toFixed(2)})`);
     if (r.sh && Math.abs(r.sh.mf.total) >= 0.005) xs.push(`misses ${sg2(r.sh.mf.total)}`); return xs.length ? ` · adds up from: ${xs.join(", ")}` : ""; };
   const best = rows.slice(0, 3), worst = rows.slice(-3).reverse();
+  const hTxt = (r) => (r.hist ? `; history there ${sg2(r.hist.resid)} vs ${their} usual over ${r.hist.n} rounds` : "; no history there");
+  const fold = (sec) => { const kick = sec.querySelector(".ip-kick"), d = el("details", { class: "cf-fold" }, [el("summary", {}, [kick])]); sec.insertBefore(d, sec.firstChild); while (d.nextSibling) d.append(d.nextSibling); return sec; };
   mount(wrap, [el("header", { class: "ip-head ip-head-slim" }, el("div", {}, [el("p", { class: "ip-kick", style: "--ipc:#64d2ff" }, `Course Fit · ${tour || ""} ${year}`.trim()), el("h2", { class: "ip-h" }, `Where ${poss} game fits best`)])),
-    el("div", { class: "ip-grid2" }, [card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round better suited than a normal week; ${lead(r)}${parts(r)}`])))),
-      card("Toughest fits", "#ff453a", el("ul", { class: "ip-bul" }, worst.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.eff)} per round; ${lead(r)}${parts(r)}`]))))]),
+    // (update 950) folded to start (a tap opens each), on the overall fit, with what history added
+    el("div", { class: "ip-grid2" }, [fold(card("Best fits", "#30d158", el("ul", { class: "ip-bul" }, best.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.adj)} per round overall; game fit ${sg2(r.eff)} (${lead(r)}${parts(r)})${hTxt(r)}`]))))),
+      fold(card("Toughest fits", "#ff453a", el("ul", { class: "ip-bul" }, worst.map((r) => el("li", {}, [el("b", {}, r.name), `: ${sg2(r.adj)} per round overall; game fit ${sg2(r.eff)} (${lead(r)}${parts(r)})${hTxt(r)}`])))))]),
     table,
-    samp(`Impact vs usual: strokes gained only exists because players differ, so where the field spreads out more in a part of the game there's more for a good player to gain, and where everyone does about the same (easy greens, short putts) there's less. For each tournament and part: the spread of that week's field (every year in the stats file) against a normal ${tour || "tour"} week, pulled toward usual when there are few player-weeks. Fit vs a normal week: ${Poss} ${year} season in each part (${P.n} rounds) × (impact − 1), added up, strokes per round. It shows where there's more room, not why (the shot-by-shot data could, for courses in Strategy Maps). A guide to fit, not a forecast.`)]);
+    samp(`Impact vs usual: strokes gained only exists because players differ, so where the field spreads out more in a part of the game there's more for a good player to gain, and where everyone does about the same (easy greens, short putts) there's less. For each tournament and part: the spread of that week's field (every year in the stats file) against a normal ${tour || "tour"} week, pulled toward usual when there are few player-weeks. Fit vs a normal week: ${Poss} ${year} season in each part (${P.n} rounds) × (impact − 1), added up, strokes per round. It shows where there's more room, not why (the shot-by-shot data could, for courses in Strategy Maps). History: ${their} strokes gained per round there against ${their} usual that same season (8 or more other rounds that year to compare with). Overall: the game fit and history together, history counting for N ÷ (N + ${KH}) with N rounds there (half at ${KH}). Tap a tournament to see why they agree or don't. A guide to fit, not a forecast.`)]);
 }
