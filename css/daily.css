@@ -1535,3 +1535,26 @@ html[data-theme="light"] .sc .st-peak, html[data-theme="light"] .sc .sc-tile.st-
 .hp-strip .hp-tx { fill: var(--muted, #8e8e93); font-size: 11px; font-family: inherit; }
 html[data-theme="light"] .hp-strip rect.hp-up { fill: #1f9d48; } html[data-theme="light"] .hp-strip rect.hp-down { fill: #d63a2f; } html[data-theme="light"] .hp-strip rect.hp-gold { fill: #a07a3a; }
 html[data-theme="light"] .hp-strip .hp-grid { stroke: rgba(0,0,0,0.10); } html[data-theme="light"] .hp-strip .hp-zero { stroke: rgba(0,0,0,0.35); }
+
+/* (update 949) phones: every stat card and tile smaller (less padding, smaller numbers and labels), the stat card grids three
+   across where they fit, the page's big boxes tighter, and the year pills shrunk to fit on one line */
+@media (max-width: 640px) {
+  .panel { padding: 0.75rem 0.8rem !important; }
+  .tr-sc-cards, .sc-tiles, .ip-tiles, .td-tiles { gap: 6px !important; }
+  .tr-sc-cards { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; margin: 6px 0 2px; }
+  .tr-sc-card, .sc-tile, .td-tile, .ip-tile, .ps-tile, .hero-tile { padding: 6px 8px !important; border-radius: 9px !important; gap: 1px !important; }
+  .pr-tile, .wl-tile { padding: 0.4rem 0.55rem !important; border-radius: 10px !important; gap: 0.1rem !important; }
+  .tr-sc-card .tr-sc-l, .sc-tile .sc-tl, .pr-tile-k, .wl-tile-k { font-size: 0.58rem !important; letter-spacing: 0.04em !important; line-height: 1.2; }
+  .tr-sc-card b, .sc-tile b, .ps-tile b { font-size: 1.05rem !important; line-height: 1.2; }
+  .td-tile strong, .ip-tile strong, .hero-tile strong, .pr-tile strong, .wl-tile-v { font-size: 1.05rem !important; line-height: 1.2; }
+  .td-tile { gap: 8px !important; } .td-tile strong { min-width: 0 !important; }
+  .wl-tile.total .wl-tile-v { font-size: 1.25rem !important; }
+  .tr-sc-card small, .sc-tile small, .ps-tile span, .pr-tile-s { font-size: 0.66rem !important; line-height: 1.25 !important; }
+  .ip-card, .sg-card { padding: 8px 10px !important; }
+  .wl-card { padding: 0.7rem 0.65rem !important; gap: 0.6rem !important; }
+  .hero { padding: 10px 11px 9px !important; }
+  .hero-big strong { font-size: 2.1rem !important; }
+  /* the year pills: on one line when they fit (six do), no sideways scroll */
+  .sg-years { display: flex !important; flex-wrap: wrap !important; justify-content: center; gap: 2px 0 !important; max-width: 100% !important; overflow: visible !important; } /* (more years than fit: a second line, never a sideways scroll) */
+  .sg-years a, .sg-years a:hover { flex: 1 1 auto; min-width: 0; text-align: center; padding: 0.3rem 0.3rem !important; font-size: 0.74rem !important; white-space: nowrap; }
+}

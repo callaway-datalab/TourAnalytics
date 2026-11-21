@@ -503,7 +503,10 @@ export function renderShell(root, { previewClient, currentRoute }) {
   const fol = secs.find((x) => x.id === "follow");
   // (update 849) Cal AI: opens (or closes) Cal's small panel over the bar
   const botCal = (() => { const b = el("button", { type: "button", class: "botbar-cal", "aria-label": "Cal AI" }, [icon("calface"), el("span", {}, "Cal AI")]);
-    b.addEventListener("click", () => import("./callie.js").then((m) => (document.documentElement.classList.contains("cal-open") ? m.closeCallie?.() : m.openCallie())).catch((err) => console.error(err))); return b; })();
+    // (update 949) and hold it to talk, as the header's Cal did: the microphone starts, what you say is asked when you let go
+    let held = false;
+    b.addEventListener("click", (e) => { if (held) { held = false; e.preventDefault(); return; } import("./callie.js").then((m) => (document.documentElement.classList.contains("cal-open") ? m.closeCallie?.() : m.openCallie())).catch((err) => console.error(err)); });
+    holdToTalk(b, () => { held = true; }); return b; })();
   const srch = (() => { const b = el("button", { type: "button", class: "botbar-search" }, [icon("search"), el("span", {}, "Search")]); b.addEventListener("click", () => openPalette()); return b; })();
   // (update 829) Home, Stats, Play, Leaderboards, Search
   const bot = el("nav", { class: "botbar", "aria-label": "Quick" }, [
