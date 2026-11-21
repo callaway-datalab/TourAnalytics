@@ -1625,3 +1625,13 @@ html[data-theme="light"] .cal-toast b { color: #7a5a22; }
 html[data-theme="light"] .cal-tip { background: rgba(128,94,42,0.06); border-color: rgba(128,94,42,0.35); }
 html[data-theme="light"] .cal-tip-txt b, html[data-theme="light"] .cal-tip-line b { color: #7a5a22; }
 @media (max-width: 640px) { .cal-tip { flex-direction: column; gap: 6px; } .cal-tip-act { align-self: flex-end; } }
+/* (update 959) Course Edge and the course's shot read: the edge and three short lines first, the rest folded */
+.cf-quick { margin: 4px 0 6px; }
+.cf-q-h { margin: 0 0 4px !important; font-size: 0.95rem !important; } .cf-q-h b { font-size: 1.15rem; }
+.cf-q-l { margin: 0 0 6px; padding-left: 1.1em; display: grid; gap: 3px; font-size: 0.88rem; line-height: 1.4; }
+.cf-more { margin: 6px 0 2px; }
+.cf-more > summary { cursor: pointer; color: var(--gold, #d4b483); font-size: 0.84rem; font-weight: 600; list-style: none; padding: 4px 0; }
+.cf-more > summary::-webkit-details-marker { display: none; }
+.cf-more > summary::before { content: "\25B8  "; } .cf-more[open] > summary::before { content: "\25BE  "; }
+.cf-how > summary { color: var(--muted, #8e8e93); font-weight: 500; }
+html[data-theme="light"] .cf-more > summary { color: #7a5a22; }

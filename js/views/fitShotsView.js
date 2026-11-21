@@ -28,7 +28,7 @@ function facedWords(x) {
   return `${amt} shots from ${d}`;
 }
 /** meta: the course's record (with .fit); opts: { prof (missProfile), mf (missFit), who ("you" | a name), self, fitNote } */
-export function fitShotsBlock(meta, { prof = null, mf = null, who = null, self = false } = {}) {
+export function fitShotsBlock(meta, { prof = null, mf = null, who = null, self = false, compact = true } = {}) {
   const F = meta.fit, W = whyTopWin(F), H = whereTopWin(F), kids = [];
   const Who = self ? "You" : who, poss = self ? "your" : who ? possOf(who) : "";
   // 1. why the Top 10 win: better at the same shots, or more of them
@@ -67,5 +67,14 @@ export function fitShotsBlock(meta, { prof = null, mf = null, who = null, self =
       ]),
       el("p", { class: "fs-note" }, `Based on where ${self ? "you" : "they"} miss on every course with shot data (${prof.courses} course${prof.courses === 1 ? "" : "s"}; closer to an average player's when there are few). This is about which way ${self ? "you miss" : "they miss"}, not how often (that's already in ${self ? "your" : "their"} driving and approach numbers): on each hole here, what ${self ? "your" : "their"} usual misses (left or right off the tee; short, long, left or right of the green) would cost, compared with an average player's. Big numbers: ${self ? "your" : "their"} double bogeys or worse, where this course punishes them more or less than usual.`)]));
   } else if (prof) kids.push(el("div", { class: "fs-blk fs-me" }, [el("h4", {}, `${self ? "Your" : possOf(who)} misses`), el("ul", { class: "fs-ul" }, missWords(prof, Who || "They").map((t) => el("li", {}, t)))]));
-  return kids.length ? el("div", { class: "fs" }, kids) : null;
+  if (!kids.length) return null;
+  if (!compact) return el("div", { class: "fs" }, kids);
+  // (update 959) three short lines first; the rest under "Show the details"
+  const PL = { OTT: "driving", APP: "approach play", ARG: "short game", PUTT: "putting" }, lines = [];
+  const top = (W?.parts || []).filter((p) => p.gap > 0.05).slice(0, 3);
+  if (top.length) lines.push(["The top 10 win here with ", el("b", {}, top.map((p) => `${PL[p.cat]} (${sg2(p.gap)})`).join(", ")), "."]);
+  if (H?.blowups?.length) lines.push(["Blow-up holes: ", el("b", {}, H.blowups.map((x) => `No. ${x.h}`).join(", ")), "."]);
+  else if (H) lines.push("No real blow-up holes.");
+  if (prof && mf) { const w = mf.holes.find((x) => x.cost > 0.03); lines.push([`${self ? "Your" : possOf(who)} usual misses here: `, el("b", { class: cls(mf.total) }, sg2(mf.total)), ` a round${w ? `; watch No. ${w.h}` : ""}.`]); }
+  return el("div", { class: "fs" }, [lines.length ? el("ul", { class: "cf-q-l" }, lines.map((t) => el("li", {}, t))) : null, el("details", { class: "cf-more" }, [el("summary", {}, "Show the details"), ...kids])]);
 }
