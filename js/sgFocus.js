@@ -368,7 +368,7 @@ export function focusSwitch(S) {
   return null; // (update 833: the views are Stats' own row of pages under the header now)
   // eslint-disable-next-line no-unreachable
   // (update 817) Overview first (and what Stats opens on), then Full stats, Focus, Tournament Results, Course Fit, Practice & Goals
-  const VIEWS = [["overview", "Overview"], ["full", "Full stats"], ["focus", "Focus"], ["results", "Tournament Results"], ["fit", "Course Fit"], ["compare", "Compare"], ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 829: WITB) // (update 827: Compare)
+  const VIEWS = [["overview", "Overview"], ["full", "Full stats"], ["focus", "Focus"], ["results", "Tournament Results"], ["fit", "Course Edge"], ["compare", "Compare"], ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 829: WITB) // (update 827: Compare)
   const st = S.st, now = VIEWS.some(([v]) => v === st.view2) ? st.view2 : "overview";
   const seg = el("div", { class: "seg seg-sm fx-switch", role: "group", "aria-label": "Stats view" }, VIEWS.map(([v, l]) => {
     const cur = now === v;

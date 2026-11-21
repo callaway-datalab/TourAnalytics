@@ -167,7 +167,7 @@ const sectionsFor = (kind) => {
 const NAV = { admin: [["#/admin/clients", "people", "User Access", ["admin-clients", "admin-datasets"]]] };
 const catNow = () => new URLSearchParams(location.hash.split("?")[1] || "").get("cat") || "performance";
 // (update 833) Stats' views, its row of pages; the one showing is ?view= in the address (Overview when there's none)
-export const STATS_VIEWS = [["full", "Player Stats"], /* (update 838: no Overview (it's on Home now); Full stats renamed) */ ["results", "Historical"] /* (update 930: was Tournament Results, now under Leaderboards) */, ["fit", "Course Fit"], ["compare", "Comparisons"], ["scout", "Scouting"] /* (update 889) */, ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
+export const STATS_VIEWS = [["full", "Player Stats"], /* (update 838: no Overview (it's on Home now); Full stats renamed) */ ["results", "Historical"] /* (update 930: was Tournament Results, now under Leaderboards) */, ["fit", "Course Edge"] /* (update 958: was Course Fit) */, ["compare", "Comparisons"], ["scout", "Scouting"] /* (update 889) */, ["bag", "What's in the Bag"], ["practice", "Practice & Goals"]]; // (update 836: no Focus; Compare is Comparisons)
 // (update 858) What's in the Bag and Practice & Goals are listed under Play (they're still Stats' views)
 export const PLAY_VIEWS = ["bag", "practice"];
 /** (update 858) can Stats switch from the view showing to `view` in place? Only within the same header (Stats or Play), so the header and its row of pages redraw when it changes */
@@ -436,7 +436,7 @@ export function holdToTalk(b, onHold = () => {}) {
 }
 
 // (update 816) Search's extra words for each page, so "sg" or "drills" finds the right one
-const WORDS = { Stats: "strokes gained sg radar season form", "Player Dossier": "player profile report overview pdf", "Course Fit": "suits who next event projection",
+const WORDS = { Stats: "strokes gained sg radar season form", "Player Dossier": "player profile report overview pdf", "Course Edge": "course fit edge advantage suits who next event projection",
   Compare: "versus side by side products", Rankings: "leaderboards rank ranking field best in the field top 10", Historical: "tournament results recap winners wins top 10s past history leaderboards", Live: "event feed live tournament scores follow", "Enter New Round": "add round entry scorecard",
   "Course Prep": "maps strategy holes course report", Practice: "drills sessions range", "Practice Week": "plan drills schedule", Goals: "targets" };
 /** (update 816) the current player in the header: tap for their Dossier, × to let go of them */
@@ -490,7 +490,7 @@ export function renderShell(root, { previewClient, currentRoute }) {
 
   // (update 816) the pages Search knows, a search button, the current player's chip, and on phones a bottom bar
   setPages(() => [["Home", "#/home", "", "home today daily report news"], ...(admin ? NAV.admin.map(([href, , label]) => [label, href, "Admin", "users codes access players"]) : []), ...secs.flatMap((sec) => sec.items.filter((it) => !it[3]?.off && !it[3]?.soon).map((it) => [it[0], it[1], sec.label, WORDS[it[0]] || ""])),
-["Comparisons", "stats:compare", "Stats", "versus side by side products compare comparisons"], ["Course Fit", "stats:fit", "Stats", "suits which courses tournaments"],
+["Comparisons", "stats:compare", "Stats", "versus side by side products compare comparisons"], ["Course Edge", "stats:fit", "Stats", "course fit edge advantage suits which courses tournaments"],
     ["Custom Practice", "stats:practice:practice", "Stats · Practice & Goals", "practice drills sessions range"], ["Recommended Practice", "stats:practice:week", "Stats · Practice & Goals", "practice week plan drills next event"], ["Goals", "stats:practice:goals", "Stats · Practice & Goals", "targets"],
     ["What's in the Bag", "stats:bag", "Stats", "witb clubs equipment gear bag"], ["Chat & support", state.isAdmin ? "#/admin/questions" : "#/questions", "", "report an issue question feature request help chat"], ["Profile", "#/account", "Account", "settings password"]]
     .map(([label, href, group, words]) => ({ label, href, group, words })));
@@ -651,7 +651,7 @@ const SEED_SECTIONS = [
   ["full", "Player Stats", "Summary"], ["full", "Player Stats", "Best Stretches", "best stretch elite stretch #1 level elite round share", ".sg-full-top"], ["full", "Player Stats", "Getting better or worse?", "trend form"],
   ["full", "Player Stats", "SG Trends", "strokes gained trend"], ["full", "Player Stats", "SG Trends by Product", "equipment club ball"], ["full", "Player Stats", "Tournaments", "events"],
   ["full", "Player Stats", "Best & worst tournaments", "best week worst week"], ["full", "Player Stats", "Ability vs Consistency", "steadiness"], ["full", "Player Stats", "Where you stand", "rank"],
-  ["results", "Historical", "Leaderboard", "finish"], ["results", "Historical", "Scorecard", "holes"], ["results", "Historical", "Wins and top 10s", "winners"], ["fit", "Course Fit", "Best fits", "toughest fits"],
+  ["results", "Historical", "Leaderboard", "finish"], ["results", "Historical", "Scorecard", "holes"], ["results", "Historical", "Wins and top 10s", "winners"], ["fit", "Course Edge", "Biggest edges", "toughest courses"],
   ["compare", "Comparisons", "Players", "compare"], ["bag", "What's in the Bag", "All clubs", "witb equipment"], ["practice", "Practice & Goals", "Recommended practice", "drills"],
 ];
 const IDX_KEY = "ta.siteIdx";

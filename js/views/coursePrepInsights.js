@@ -66,7 +66,7 @@ export async function drawInsights(ctx, course) {
     try { const FS = await import("../courseFitShots.js"), m0 = all.find((x) => x.id === meta.id) || meta;
       if (FS.hasFit(m0)) { const metas = all.filter(FS.hasFit), prof = who ? FS.missProfile(who.key, metas) : null, mf = prof ? FS.missFit(prof, m0.fit, FS.usualExposure(metas)) : null, self = !!(who && /\(me\)$|^You$/.test(who.label));
         const { fitShotsBlock } = await import("./fitShotsView.js"), b = fitShotsBlock(m0, { prof, mf, who: who ? who.label : null, self });
-        if (b) fitSec = sec(who ? `HOW ${who.label.toUpperCase()} FITS` : "HOW IT'S WON", [b], who ? null : "Pick a player to see how their misses suit it."); }
+        if (b) fitSec = sec(who ? `${who.label.toUpperCase()}\u2019${/S$/.test(who.label.toUpperCase()) ? "" : "S"} EDGE HERE` : "HOW IT'S WON", [b], who ? null : "Pick a player to see how their misses suit it."); }
       else if (ctx.state?.isAdmin && meta.rawChunks) fitSec = sec("HOW IT'S WON", [el("p", { class: "muted" }, "Press Rebuild maps (Upload Data › Strategy Maps) to work out how this course is won and how each player's misses suit it.")]); } catch (e) { console.warn("fit shots", e); }
     mount(body, [scores(I), faced2(I, all, meta, S, who && mine ? who.label : null, who ? { label: who.label, rounds: pd?.rounds || [] } : null), fitSec, plan(H, openHole), histSec, strategy(I, holeNums, toMap, meta, data, prof), holesSec, ...vsTop(H, S, name, first, openHole)].filter(Boolean));
   }

@@ -30,6 +30,7 @@ const ROUTES = [
   ["/product-usage", "signed-in", () => Promise.resolve({ render: () => { location.hash = "#/comparisons"; } }), "product-usage"], // (update 209: product usage is in Compare)
   ["/dossier", "signed-in", () => import("./views/dossier.js"), "dossier"], // (update 815: one page per player)
   ["/course-fit", "signed-in", () => import("./views/courseFit.js"), "course-fit"], // (update 815: who suits a course)
+  ["/course-edge", "signed-in", () => import("./views/courseFit.js"), "course-fit"], // (update 958: Course Edge, the new name; the old address still works)
   ["/practice-week", "signed-in", () => import("./current.js").then((m) => ({ render: () => { const k = /[?&]player=([^&]+)/.exec(location.hash); if (k) m.setCurrent({ key: decodeURIComponent(k[1]) }); m.openStatsTab("practice", "week"); } })), "practice-week"], // (update 817: a tab on Stats) // (update 815: a week of practice from the data)
   ["/practice", "signed-in", () => import("./views/practiceSimple.js"), "practice"], // (update 690: the simple practice tracker in place of the shot-by-shot one)
   // (the old Practice Recommendations / Practice Tracking links open Practice)

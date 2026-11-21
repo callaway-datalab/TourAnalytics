@@ -165,7 +165,7 @@ export async function overview(box, key, name, opts = {}) { // (update 837) opts
       })(),
       samp(`Every ${tour || ""} round in ${year}: strokes gained per round ${c ? `in ${PI.CATN[c].toLowerCase()} on the shots hit with each model` : "on every shot, with each ball"}, over the rounds it was used. Rank: every model, by strokes gained per round; * in italics: under 4 rounds, a small sample. The chart: the model used most at each event`)], `In the bag · ${name}`);
   }
-  const fitBox = card("Next event fit", "#64d2ff", el("p", { class: "muted" }, "Loading the course…"), "ip-fit");
+  const fitBox = card("Next event edge", "#64d2ff", el("p", { class: "muted" }, "Loading the course…"), "ip-fit");
   mount(wrap, [head(`${tour || ""} ${year}`.trim()), tiles, opts.home ? formCard : el("div", { class: "ip-grid ip-grid-2" }, [formCard, goesCard]), el("div", { class: "ip-bag" }, bagCard), fitBox,
     el("p", { class: "ip-foot" }, `Strokes gained against the tour baseline. Ranks among players with 8+ rounds on the ${tour || "tour"} in ${year}.${tours.length > 1 ? ` ${self ? "You also have" : `${name} also has`} rounds on the ${tours.filter((t) => t !== tour).join(", ")}: this is their main tour.` : ""}`)]);
   if (focus) requestAnimationFrame(() => { const t = fR ? wrap.querySelector(".ip-focus") : PI.CATS.includes(focus) ? wrap.querySelectorAll(".ip-tile")[1 + PI.CATS.indexOf(focus)] : null; if (t) { t.classList.add("ip-focus"); t.scrollIntoView({ block: "center", behavior: "smooth" }); } });
@@ -181,7 +181,7 @@ export async function overview(box, key, name, opts = {}) { // (update 837) opts
     const head = el("div", { class: "ip-fit-head" }, [el("p", { class: "ip-kick" }, `${PI.pickedNext(key) ? "Preparing for" : ev.entered ? "Next event (entered)" : "Next event"}${ev.name ? ` · ${ev.name}` : ""}${when ? ` · ${when}` : ""}${ev.course ? ` · ${ev.course}` : ""}`), change]);
     if (!ev.name) { mount(fitBox, [head, el("p", { class: "muted" }, "No schedule for this tour yet: pick a tournament with Change.")]); return; }
     const parts = E ? PI.CATS.map((c) => ({ c, room: E.room[c], me: P.cat[c] || 0, edge: (P.cat[c] || 0) * (E.room[c] - 1) })) : null, eff = parts ? parts.reduce((t, x) => t + x.edge, 0) : null;
-    const roomBox = parts ? [el("h3", { class: "ip-h3" }, [`Fit vs a normal week: `, el("b", { class: cls(eff) }, `${sg2(eff)} strokes per round`)]),
+    const roomBox = parts ? [el("h3", { class: "ip-h3" }, [`Edge vs a normal week: `, el("b", { class: cls(eff) }, `${sg2(eff)} strokes per round`)]),
       el("ul", { class: "ip-bul" }, [...parts].sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge)).map((x) => el("li", {}, [(() => { const t = PI.fitWords(x, self ? "your" : `${nameS}’s`.replace(/s’s$/, "s’"), self ? "" : nameS); return t[0].toUpperCase() + t.slice(1); })(), "; worth ", el("b", { class: cls(x.edge) }, `${sg2(x.edge)} per round`), " here against a normal week"]) /* (update 838: plain words) */))]
       : [el("p", { class: "muted" }, `No ${ev.name} on record in the stats file yet, so no fit from it.`)];
     mount(fitBox, [head, ...roomBox, el("div", { class: "ip-fit-course" }, el("p", { class: "muted small" }, "Looking for the course in Strategy Maps…"))]);
@@ -208,7 +208,7 @@ export async function overview(box, key, name, opts = {}) { // (update 837) opts
       el("p", { class: "cf-sub" }, SO.on.length ? "Any tournament on record, in schedule order" : "Any tournament on record"),
       el("div", { class: "ip-evlist" }, SO.on.map((o) => row(o.name, new Date(`${o.start}T12:00:00`).toLocaleDateString(undefined, { month: "short" }), o.name))),
       SO.off.length ? el("p", { class: "cf-sub" }, SO.on.length ? "Not on the current schedule" : "") : null,
-      SO.off.length ? el("div", { class: "ip-evlist" }, SO.off.map((n) => row(n, null, n))) : null], `Next event fit · ${name}`);
+      SO.off.length ? el("div", { class: "ip-evlist" }, SO.off.map((n) => row(n, null, n))) : null], `Next event edge · ${name}`);
   };
   drawFit();
 }
